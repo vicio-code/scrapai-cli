@@ -46,6 +46,10 @@
         "hints_position_type": {
           "css": "i[name='icon-light-clock'] ~ p::text",
           "processors": [{"type": "strip"}]
+        },
+        "hints_compensation": {
+          "css": "i[name='icon-light-money'] ~ p::text",
+          "processors": [{"type": "strip"}]
         }
       }
     },
