@@ -1,0 +1,59 @@
+{
+  "name": "www_lvmh_com",
+  "source_url": "https://www.lvmh.com/en/join-us/our-job-offers",
+  "allowed_domains": ["www.lvmh.com"],
+  "start_urls": [
+    "https://www.lvmh.com/en/join-us/our-job-offers/292977",
+    "https://www.lvmh.com/en/join-us/our-job-offers/291909",
+    "https://www.lvmh.com/en/join-us/our-job-offers/63545",
+    "https://www.lvmh.com/en/join-us/our-job-offers/292978",
+    "https://www.lvmh.com/en/join-us/our-job-offers/292979"
+  ],
+  "sections": [
+    {
+      "match": ["/en/join-us/our-job-offers/[0-9]+"],
+      "follow": false,
+      "extract": {
+        "title": {
+          "css": "h1[id^='offerTitle-']::text"
+        },
+        "description": {
+          "css": "p[class*='list-disc']:has(b), div#position p:not([class])",
+          "to_text": true
+        },
+        "employer": {
+          "css": "h1[id^='offerTitle-'] ~ p.typo-subtitle:first-of-type::text"
+        },
+        "location": {
+          "css": "li.hidden.items-center.justify-center.gap-2.sm\\:flex *::text"
+        },
+        "job_id": {
+          "css": "h1[id^='offerTitle-']::attr(id)",
+          "processors": [
+            {"type": "regex", "pattern": "offerTitle-(.+)"}
+          ]
+        },
+        "published_date": {
+          "css": "p.typo-body-s.uppercase.text-thematique-greyBlue::text",
+          "processors": [
+            {"type": "regex", "pattern": "Published on (.+)"},
+            {"type": "parse_datetime", "format": "%m.%d.%Y"}
+          ]
+        },
+        "hints_position_type": {
+          "css": "ul.typo-body-s.hidden.flex-nowrap.items-center li:last-child *::text"
+        },
+        "hints_job_function": {
+          "css": "h1[id^='offerTitle-'] ~ p.typo-subtitle:nth-of-type(2)::text"
+        }
+      }
+    }
+  ],
+  "settings": {
+    "BROWSER_ENABLED": true,
+    "DOWNLOAD_DELAY": 1,
+    "CONCURRENT_REQUESTS": 4,
+    "CONCURRENT_REQUESTS_PER_DOMAIN": 2,
+    "AUTOTHROTTLE_ENABLED": false
+  }
+}

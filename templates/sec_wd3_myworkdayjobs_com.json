@@ -1,0 +1,70 @@
+{
+  "name": "sec_wd3_myworkdayjobs_com",
+  "source_url": "https://sec.wd3.myworkdayjobs.com/pt-BR/Samsung_Careers",
+  "allowed_domains": ["sec.wd3.myworkdayjobs.com"],
+  "start_urls": ["https://sec.wd3.myworkdayjobs.com/pt-BR/Samsung_Careers"],
+  "sections": [
+    {
+      "match": ["/Samsung_Careers/job/"],
+      "deny": ["/apply"],
+      "follow": false,
+      "extract": {
+        "title": {
+          "css": "h2[data-automation-id='jobPostingHeader']::text",
+          "processors": [{"type": "strip"}]
+        },
+        "description": {
+          "css": "[data-automation-id='jobPostingDescription']",
+          "to_text": true
+        },
+        "employer": {
+          "css": "meta[property='og:description']::attr(content)",
+          "processors": [
+            {"type": "regex", "pattern": "(Samsung Electronics)"},
+            {"type": "default", "default": "Samsung Electronics"}
+          ]
+        },
+        "location": {
+          "css": "[data-automation-id='locations'] dd::text",
+          "processors": [{"type": "strip"}]
+        },
+        "job_id": {
+          "css": "[data-automation-id='requisitionId'] dd::text",
+          "processors": [{"type": "strip"}]
+        },
+        "hints_position_type": {
+          "css": "[data-automation-id='time'] dd::text",
+          "processors": [{"type": "strip"}]
+        },
+        "hints_workplace_type": {
+          "css": "[data-automation-id='remoteType'] dd::text",
+          "processors": [{"type": "strip"}]
+        },
+        "published_date": {
+          "xpath": "//dt[normalize-space(text())='posted on']/following-sibling::dd[1]//text()",
+          "processors": [
+            {"type": "regex", "pattern": "(?:Posted|Publicado) (.+)"},
+            {"type": "parse_datetime"}
+          ]
+        }
+      }
+    },
+    {
+      "match": ["/Samsung_Careers$", "/Samsung_Careers\\?"],
+      "follow": true
+    }
+  ],
+  "settings": {
+    "BROWSER_ENABLED": true,
+    "CLOUDFLARE_STRATEGY": "browser_only",
+    "CF_WAIT_SELECTOR": "[data-automation-id='jobPostingDescription']",
+    "CF_WAIT_TIMEOUT": 20,
+    "EXTRACTOR_ORDER": ["custom"],
+    "DOWNLOAD_DELAY": 2,
+    "CONCURRENT_REQUESTS": 1,
+    "AUTOTHROTTLE_ENABLED": false,
+    "DELTAFETCH_ENABLED": false,
+    "INFINITE_SCROLL": true,
+    "MAX_SCROLLS": 35
+  }
+}

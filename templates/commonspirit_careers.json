@@ -1,0 +1,91 @@
+{
+  "name": "commonspirit_careers",
+  "source_url": "https://www.commonspirit.careers",
+  "allowed_domains": ["www.commonspirit.careers"],
+  "start_urls": [],
+  "sections": [
+    {
+      "match": ["/job/"],
+      "follow": false,
+      "extract": {
+        "title": {
+          "css": "h1.job-description__heading::text, h1.ajd-header__job-title::text, h2.ajd-job-details__heading::text",
+          "processors": [{"type": "strip"}]
+        },
+        "description": {
+          "css": "div.ats-description",
+          "to_text": true
+        },
+        "location": {
+          "css": "li.job-description__location-item.job-detail-location::text",
+          "processors": [{"type": "strip"}]
+        },
+        "published_date": {
+          "css": "meta[name='gtm_firstindex']::attr(content)",
+          "processors": [{"type": "parse_datetime"}]
+        },
+        "job_id": {
+          "css": "dd.job-description__desc-detail.job-detail-job-id::text, span.ajd-overview__job-fact-desc::text",
+          "processors": [{"type": "strip"}]
+        },
+        "employer": {
+          "css": "li.job-description__location-item.job-detail-facility::text",
+          "processors": [
+            {"type": "strip"},
+            {"type": "default", "default": "CommonSpirit Health"}
+          ]
+        },
+        "hints_compensation": {
+          "css": "p.job-info.posted-pay-range::text, div.ajd-overview__about-job::text",
+          "processors": [
+            {"type": "regex", "pattern": "\\$(\\d[\\d.,]+\\s*-\\s*\\$\\d[\\d.,]+\\s*/\\w+)"},
+            {"type": "strip"}
+          ]
+        },
+        "hints_position_type": {
+          "css": "dd.job-description__desc-detail.job-detail-employment-type::text, span.ajd-overview__quick-fact-txt::text",
+          "processors": [
+            {"type": "regex", "pattern": "(?:Employment Type:\\s*)(.+)"},
+            {"type": "strip"},
+            {"type": "default", "default": null}
+          ]
+        },
+        "hints_workplace_type": {
+          "css": "dd.job-description__desc-detail.job-detail-remote::text",
+          "processors": [
+            {"type": "strip"},
+            {"type": "lowercase"},
+            {"type": "regex", "pattern": "^(yes|no)$"},
+            {"type": "replace", "old": "yes", "new": "Remote"},
+            {"type": "replace", "old": "no", "new": "On Site"},
+            {"type": "default", "default": null}
+          ]
+        },
+        "hints_job_function": {
+          "css": "dd.job-description__desc-detail.job-detail-category::text",
+          "processors": [
+            {"type": "strip"},
+            {"type": "default", "default": null}
+          ]
+        }
+      }
+    }
+  ],
+  "settings": {
+    "EXTRACTOR_ORDER": ["custom"],
+    "DOWNLOAD_DELAY": 1,
+    "CONCURRENT_REQUESTS": 8,
+    "CONCURRENT_REQUESTS_PER_DOMAIN": 8,
+    "AUTOTHROTTLE_ENABLED": true,
+    "DELTAFETCH_ENABLED": false,
+    "GENERATED_URLS": [
+      {
+        "template": "https://www.commonspirit.careers/search-jobs/?p={page}",
+        "vars": {
+          "page": {"type": "range", "from": 1, "to": 485}
+        },
+        "follow": true
+      }
+    ]
+  }
+}

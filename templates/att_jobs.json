@@ -1,0 +1,92 @@
+{
+  "name": "att_jobs",
+  "source_url": "https://www.att.jobs",
+  "allowed_domains": ["www.att.jobs"],
+  "start_urls": [],
+  "sections": [
+    {
+      "match": ["/job/"],
+      "follow": false,
+      "extract": {
+        "title": {
+          "css": "h1.headline__medium::text, h1.ajd_header__job-title::text",
+          "processors": [{"type": "strip"}]
+        },
+        "description": {
+          "css": "div.ats-description",
+          "to_text": true
+        },
+        "location": {
+          "css": "p.section11__location::text, p.ajd_header__location::text",
+          "processors": [{"type": "strip"}]
+        },
+        "published_date": {
+          "css": "span.job-date.job-info::text",
+          "processors": [
+            {"type": "regex", "pattern": "(\\d{2}/\\d{2}/\\d{4})"},
+            {"type": "parse_datetime"}
+          ]
+        },
+        "job_id": {
+          "css": "span.job-id.job-info::text",
+          "processors": [
+            {"type": "regex", "pattern": "(\\d+)"}
+          ]
+        },
+        "employer": {
+          "css": "html::attr(data-facet-id)",
+          "processors": [
+            {"type": "regex", "pattern": "company_name-([A-Za-z0-9&]+)"},
+            {"type": "default", "default": "AT&T"}
+          ]
+        },
+        "hints_position_type": {
+          "css": "html::attr(data-facet-id)",
+          "processors": [
+            {"type": "regex", "pattern": "job_type-([A-Za-z-]+)"},
+            {"type": "replace", "old": "-", "new": " "},
+            {"type": "default", "default": null}
+          ]
+        },
+        "hints_workplace_type": {
+          "css": "html::attr(data-facet-id)",
+          "processors": [
+            {"type": "regex", "pattern": "WorkplaceDesignation-([A-Za-z-]+)"},
+            {"type": "replace", "old": "-", "new": " "},
+            {"type": "regex", "pattern": "^(On Site|Virtual|Hybrid|Remote)$"},
+            {"type": "default", "default": null}
+          ]
+        },
+        "hints_job_function": {
+          "css": "html::attr(data-facet-id)",
+          "processors": [
+            {"type": "regex", "pattern": "custom_fields\\.AJDType-([A-Za-z]+)"},
+            {"type": "default", "default": null}
+          ]
+        },
+        "hints_compensation": {
+          "css": "meta[name='compensation']::attr(content)",
+          "processors": [{"type": "default", "default": null}]
+        }
+      }
+    }
+  ],
+  "settings": {
+    "CURL_CFFI_ENABLED": true,
+    "EXTRACTOR_ORDER": ["custom"],
+    "DOWNLOAD_DELAY": 1,
+    "CONCURRENT_REQUESTS": 4,
+    "CONCURRENT_REQUESTS_PER_DOMAIN": 4,
+    "AUTOTHROTTLE_ENABLED": true,
+    "DELTAFETCH_ENABLED": false,
+    "GENERATED_URLS": [
+      {
+        "template": "https://www.att.jobs/search-jobs?k=&l=&p={page}",
+        "vars": {
+          "page": {"type": "range", "from": 1, "to": 178}
+        },
+        "follow": true
+      }
+    ]
+  }
+}

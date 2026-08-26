@@ -1,0 +1,72 @@
+{
+  "name": "www_multitrabajos_com",
+  "source_url": "https://www.multitrabajos.com/empleos-seniority-junior.html?landing-jovenes-profesionales=true",
+  "allowed_domains": ["www.multitrabajos.com"],
+  "start_urls": [],
+  "sections": [
+    {
+      "match": ["/empleos/[^/]+-\\d+\\.html"],
+      "follow": false,
+      "extract": {
+        "title": {
+          "css": "h1::text",
+          "processors": [{"type": "strip"}]
+        },
+        "description": {
+          "css": "div[role='region'][aria-labelledby='descripcion-aviso']",
+          "to_text": true
+        },
+        "employer": {
+          "css": "#header-component > div > div > *:nth-child(2) > *:first-child > *:first-child *::text",
+          "processors": [{"type": "strip"}]
+        },
+        "location": {
+          "css": "i[name*='pin'] ~ *::text",
+          "processors": [{"type": "strip"}]
+        },
+        "job_id": {
+          "css": "meta[property='og:url']::attr(content)",
+          "processors": [{"type": "regex", "pattern": "-(\\d+)\\.html$"}]
+        },
+        "published_date": {
+          "css": "div[role='region'][aria-labelledby='descripcion-aviso'] ~ *::text",
+          "processors": [
+            {"type": "regex", "pattern": "(\\d{2}/\\d{2}/\\d{4})"},
+            {"type": "parse_datetime", "format": "%d/%m/%Y"}
+          ]
+        },
+        "hints_workplace_type": {
+          "css": "ul[aria-label='Información adicional del aviso'] li a[href*='modalidad'] *::text",
+          "processors": [{"type": "strip"}]
+        },
+        "hints_job_function": {
+          "css": "ul[aria-label='Información adicional del aviso'] li a[href*='area'] *::text",
+          "processors": [{"type": "strip"}]
+        },
+        "hints_position_type": {
+          "css": "i[name='icon-light-clock'] ~ p::text",
+          "processors": [{"type": "strip"}]
+        }
+      }
+    },
+    {"match": [".*"], "follow": true}
+  ],
+  "settings": {
+    "BROWSER_ENABLED": true,
+    "CLOUDFLARE_STRATEGY": "browser_only",
+    "CF_WAIT_SELECTOR": "h1",
+    "EXTRACTOR_ORDER": ["custom"],
+    "DOWNLOAD_DELAY": 1,
+    "CONCURRENT_REQUESTS": 1,
+    "CONCURRENT_REQUESTS_PER_DOMAIN": 1,
+    "AUTOTHROTTLE_ENABLED": false,
+    "DELTAFETCH_ENABLED": false,
+    "GENERATED_URLS": [
+      {
+        "template": "https://www.multitrabajos.com/empleos-seniority-junior.html?landing-jovenes-profesionales=true&page={page}",
+        "vars": {"page": {"type": "range", "from": 1, "to": 78}},
+        "follow": true
+      }
+    ]
+  }
+}

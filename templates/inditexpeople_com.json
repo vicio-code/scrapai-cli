@@ -1,0 +1,60 @@
+{
+  "name": "inditexpeople_com",
+  "source_url": "https://www.inditexpeople.com/ww/en/joinus/offers",
+  "allowed_domains": ["www.inditexpeople.com"],
+  "start_urls": ["https://www.inditexpeople.com/ww/en/joinus/offers"],
+  "sections": [
+    {
+      "match": ["/joinus/offers/[A-Z0-9]+$"],
+      "deny": ["#"],
+      "follow": false,
+      "extract": {
+        "title": {
+          "css": "h1.OfferDetailContent_offerDetail__title__M5GgU::text",
+          "processors": [{"type": "strip"}]
+        },
+        "description": {
+          "css": "div.OfferDetailContent_offerDetail__description__DT97X",
+          "to_text": true
+        },
+        "employer": {
+          "css": "p.DetailsSection_details-section__label__uObiW:nth-child(1)::text",
+          "get_all": true,
+          "processors": [
+            {"type": "join", "separator": ""},
+            {"type": "regex", "pattern": "·\\s*(.+)"},
+            {"type": "strip"}
+          ]
+        },
+        "location": {
+          "css": "p.DetailsSection_details-section__label__uObiW:nth-child(2)::text",
+          "get_all": true,
+          "processors": [
+            {"type": "join", "separator": ""},
+            {"type": "regex", "pattern": "·\\s*(.+)"},
+            {"type": "strip"}
+          ]
+        },
+        "job_id": {
+          "css": "link[rel='canonical']::attr(href)",
+          "processors": [{"type": "regex", "pattern": "/joinus/offers/([A-Z0-9]+)"}]
+        }
+      }
+    },
+    {
+      "match": ["/joinus/offers$", "/joinus/offers\\?"],
+      "follow": true
+    }
+  ],
+  "settings": {
+    "BROWSER_ENABLED": true,
+    "EXTRACTOR_ORDER": ["custom"],
+    "INFINITE_SCROLL": true,
+    "MAX_SCROLLS": 200,
+    "SCROLL_DELAY": 1.5,
+    "DOWNLOAD_DELAY": 1,
+    "CONCURRENT_REQUESTS": 8,
+    "CONCURRENT_REQUESTS_PER_DOMAIN": 8,
+    "AUTOTHROTTLE_ENABLED": false
+  }
+}

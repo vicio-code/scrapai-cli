@@ -1,0 +1,54 @@
+{
+  "name": "christies_wd3_myworkdayjobs_com",
+  "source_url": "https://christies.wd3.myworkdayjobs.com/it-IT/Christies_Careers",
+  "allowed_domains": ["christies.wd3.myworkdayjobs.com"],
+  "start_urls": [
+    "https://christies.wd3.myworkdayjobs.com/it-IT/Christies_Careers"
+  ],
+  "sections": [
+    {
+      "match": [".*/Christies_Careers/?$"],
+      "follow": true
+    },
+    {
+      "match": [".*/Christies_Careers/job/[^/]+/[^/]+$"],
+      "extract": {
+        "title": {"css": "title::text"},
+        "description": {
+          "css": "div[data-automation-id='jobPostingDescription']",
+          "to_text": true
+        },
+        "employer": {
+          "css": "h1::text",
+          "processors": [{"type": "regex", "pattern": "(Christie's)"}]
+        },
+        "location": {
+          "xpath": "//dt[normalize-space(text())='locations']/following-sibling::dd[1]//text()"
+        },
+        "job_id": {
+          "xpath": "//dt[contains(text(),'job requisition')]/following-sibling::dd[1]//text()"
+        },
+        "hints_position_type": {
+          "xpath": "//dt[normalize-space(text())='time type']/following-sibling::dd[1]//text()"
+        },
+        "published_date": {
+          "xpath": "//dt[normalize-space(text())='posted on']/following-sibling::dd[1]//text()",
+          "processors": [
+            {"type": "regex", "pattern": "Posted (.+)"},
+            {"type": "parse_datetime"}
+          ]
+        }
+      }
+    }
+  ],
+  "settings": {
+    "BROWSER_ENABLED": true,
+    "CLOUDFLARE_STRATEGY": "browser_only",
+    "CF_WAIT_SELECTOR": "div[data-automation-id='jobPostingDescription']",
+    "CF_WAIT_TIMEOUT": 20,
+    "EXTRACTOR_ORDER": ["custom"],
+    "CONCURRENT_REQUESTS": 1,
+    "CONCURRENT_REQUESTS_PER_DOMAIN": 1,
+    "AUTOTHROTTLE_ENABLED": false
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "name": "careers_richemont_com",
+  "source_url": "https://careers.richemont.com/en/jobs/",
+  "allowed_domains": ["careers.richemont.com"],
+  "start_urls": [],
+  "sections": [
+    {
+      "match": ["/en/jobs/jr[^/]+/[^/]+/"],
+      "follow": false,
+      "extract": {
+        "title": {
+          "css": "section.hero h1::text",
+          "processors": [{"type": "strip"}]
+        },
+        "description": {
+          "css": "article.cms-content",
+          "to_text": true
+        },
+        "employer": {
+          "css": ".breadcrumb-wrap .breadcrumb li:nth-child(2):not(.active) span::text",
+          "processors": [
+            {"type": "strip"},
+            {"type": "default", "default": "Richemont"}
+          ]
+        },
+        "location": {
+          "css": "section.hero ul.list-inline.job-meta li:nth-child(2)::text",
+          "get_all": true,
+          "processors": [
+            {"type": "join", "separator": ""},
+            {"type": "strip"}
+          ]
+        },
+        "job_id": {
+          "css": "h2.h5::text",
+          "processors": [
+            {"type": "regex", "pattern": "(JR[\\w]+)"},
+            {"type": "strip"}
+          ]
+        },
+        "hints_position_type": {
+          "css": "section.hero ul.list-inline.job-meta li:last-child::text",
+          "processors": [{"type": "strip"}]
+        },
+        "hints_job_function": {
+          "css": "section.hero ul.list-inline.job-meta li:nth-child(1)::text",
+          "get_all": true,
+          "processors": [
+            {"type": "join", "separator": ""},
+            {"type": "strip"}
+          ]
+        }
+      }
+    }
+  ],
+  "settings": {
+    "CURL_CFFI_ENABLED": true,
+    "DOWNLOAD_DELAY": 0,
+    "CONCURRENT_REQUESTS": 32,
+    "CONCURRENT_REQUESTS_PER_DOMAIN": 16,
+    "AUTOTHROTTLE_ENABLED": false,
+    "GENERATED_URLS": [
+      {
+        "template": "https://careers.richemont.com/en/jobs/?page={page}",
+        "vars": {
+          "page": {"type": "range", "from": 1, "to": 67}
+        },
+        "follow": true
+      }
+    ]
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "name": "www_kering_com",
+  "source_url": "https://www.kering.com/en/talent/job-offers",
+  "allowed_domains": ["www.kering.com"],
+  "start_urls": [
+    "https://www.kering.com/en/talent/job-offers/europe/balenciaga-cdi-senior-client-ambassador/",
+    "https://www.kering.com/en/talent/job-offers/northern-america/gucci-or-client-advisor-chicago-fashion-outlets/",
+    "https://www.kering.com/en/talent/job-offers/asia/balenciaga-communication-manager-south-east-asia-oceania/",
+    "https://www.kering.com/en/talent/job-offers/asia/saint-laurent-department-manager-7/",
+    "https://www.kering.com/en/talent/job-offers/europe/bottega-veneta-assistant-store-manager-avenue-montaigne/"
+  ],
+  "sections": [
+    {
+      "match": ["/en/talent/job-offers/[^/]+/[^/]+/"],
+      "follow": false,
+      "extract": {
+        "title": {
+          "css": "h1::text",
+          "processors": [{"type": "strip"}]
+        },
+        "description": {
+          "css": "h1 ~ div",
+          "to_text": true
+        },
+        "employer": {
+          "css": "h2 span:nth-child(1)::text",
+          "processors": [{"type": "strip"}]
+        },
+        "location": {
+          "css": "h2 span:nth-of-type(3)::text, h2 span:nth-of-type(4)::text",
+          "get_all": true,
+          "processors": [
+            {"type": "join", "separator": " - "}
+          ]
+        },
+        "job_id": {
+          "css": "a[href^='https://careers.kering.com/careers']::attr(href)",
+          "processors": [
+            {"type": "regex", "pattern": "careers/([A-Z][0-9]+)"}
+          ]
+        },
+        "published_date": {
+          "css": "p.t1ahz3a9::text",
+          "processors": [{"type": "parse_datetime"}]
+        },
+        "hints_position_type": {
+          "css": "h2 span:nth-child(2)::text",
+          "processors": [{"type": "strip"}]
+        },
+        "hints_workplace_type": {
+          "css": "div#job-footer ul li:nth-child(1)::text",
+          "processors": [{"type": "strip"}]
+        }
+      }
+    }
+  ]
+}

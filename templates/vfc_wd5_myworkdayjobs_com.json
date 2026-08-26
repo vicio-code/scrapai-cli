@@ -1,0 +1,58 @@
+{
+  "name": "vfc_wd5_myworkdayjobs_com",
+  "source_url": "https://vfc.wd5.myworkdayjobs.com/vfc_careers",
+  "allowed_domains": ["vfc.wd5.myworkdayjobs.com"],
+  "start_urls": [
+    "https://vfc.wd5.myworkdayjobs.com/vfc_careers"
+  ],
+  "sections": [
+    {
+      "match": [".*/vfc_careers/job/.*"],
+      "deny": ["/apply"],
+      "follow": false,
+      "extract": {
+        "title": {"css": "h2[data-automation-id='jobPostingHeader']::text"},
+        "description": {
+          "css": "div[data-automation-id='jobPostingDescription']",
+          "to_text": true
+        },
+        "employer": {
+          "css": "div[data-automation-id='jobPostingDescription'] p:contains('Careers')",
+          "to_text": true,
+          "processors": [
+            {"type": "regex", "pattern": "visit ([A-Za-z &]+) Careers"},
+            {"type": "strip"},
+            {"type": "replace", "old": "VF", "new": "VF Corporation"},
+            {"type": "default", "default": "VF Corporation"}
+          ]
+        },
+        "location": {"css": "div[data-automation-id='locations'] dd::text"},
+        "job_id": {"css": "div[data-automation-id='requisitionId'] dd::text"},
+        "hints_position_type": {"css": "div[data-automation-id='time'] dd::text"},
+        "published_date": {
+          "css": "div[data-automation-id='postedOn'] dd::text",
+          "processors": [
+            {"type": "regex", "pattern": "Posted (.+)"},
+            {"type": "strip"},
+            {"type": "parse_datetime"}
+          ]
+        }
+      }
+    },
+    {
+      "match": [".*"],
+      "follow": true
+    }
+  ],
+  "settings": {
+    "BROWSER_ENABLED": true,
+    "CLOUDFLARE_STRATEGY": "browser_only",
+    "CF_WAIT_SELECTOR": "h2[data-automation-id='jobPostingHeader']",
+    "CONCURRENT_REQUESTS": 1,
+    "CONCURRENT_REQUESTS_PER_DOMAIN": 1,
+    "AUTOTHROTTLE_ENABLED": false,
+    "INFINITE_SCROLL": true,
+    "MAX_SCROLLS": 100,
+    "SCROLL_DELAY": 2.0
+  }
+}

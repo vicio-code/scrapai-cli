@@ -1,0 +1,298 @@
+{
+  "name": "guess",
+  "source_url": "https://apply.workable.com/guess-europe-sagl/",
+  "allowed_domains": [
+    "apply.workable.com"
+  ],
+  "start_urls": [],
+  "sections": [
+    {
+      "match": [
+        "/guess-europe-sagl/jobs/view/[A-Z0-9]+[.]md"
+      ],
+      "follow": false,
+      "extract": {
+        "title": {
+          "css": "body::text",
+          "processors": [
+            {
+              "type": "regex",
+              "pattern": "# (.+)"
+            }
+          ]
+        },
+        "description": {
+          "css": "body::text",
+          "processors": [
+            {
+              "type": "regex",
+              "pattern": "## Description\n\n([\\s\\S]+)"
+            }
+          ]
+        },
+        "employer": {
+          "css": "body::text",
+          "processors": [
+            {
+              "type": "regex",
+              "pattern": "[*][*]Department:[*][*] (.+)"
+            },
+            {"type": "replace", "old": "Retail", "new": "Guess"},
+            {
+              "type": "default",
+              "default": "Guess"
+            }
+          ]
+        },
+        "location": {
+          "css": "body::text",
+          "processors": [
+            {
+              "type": "regex",
+              "pattern": "> Guess Europe Sagl [\u00b7] (.+?) [\u00b7]"
+            },
+            {
+              "type": "strip"
+            }
+          ]
+        },
+        "job_id": {
+          "css": "body::text",
+          "processors": [
+            {
+              "type": "regex",
+              "pattern": "/j/([A-Z0-9]+)/apply"
+            }
+          ]
+        },
+        "published_date": {
+          "css": "body::text",
+          "processors": [
+            {
+              "type": "regex",
+              "pattern": "Posted (\\d{4}-\\d{2}-\\d{2})"
+            },
+            {
+              "type": "parse_datetime"
+            }
+          ]
+        },
+        "hints_position_type": {
+          "css": "body::text",
+          "processors": [
+            {
+              "type": "regex",
+              "pattern": "> Guess Europe Sagl [\u00b7] .+? [\u00b7] (.+?) [\u00b7] Posted"
+            },
+            {"type": "replace", "old": "\u2014", "new": ""},
+            {"type": "default", "default": null}
+          ]
+        },
+        "hints_workplace_type": {
+          "css": "body::text",
+          "processors": [
+            {
+              "type": "regex",
+              "pattern": "[*][*]Workplace:[*][*] (.+)"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "settings": {
+    "EXTRACTOR_ORDER": [
+      "custom"
+    ],
+    "DOWNLOAD_DELAY": 0.5,
+    "CONCURRENT_REQUESTS": 8,
+    "AUTOTHROTTLE_ENABLED": true,
+    "DELTAFETCH_ENABLED": false,
+    "GENERATED_URLS": [
+      {
+        "template": "https://apply.workable.com/guess-europe-sagl/jobs/view/{id}.md",
+        "vars": {
+          "id": {
+            "type": "list",
+            "values": [
+              "00F36609D7",
+              "01055D8E4D",
+              "019489A137",
+              "0294D6F544",
+              "0377013EFF",
+              "0511BFA188",
+              "0644096051",
+              "065A7BCC4F",
+              "0968C7D865",
+              "10479E8FEC",
+              "1091E76012",
+              "1187B19D1A",
+              "11A6AAC480",
+              "126F3ACA4F",
+              "18A253E0B7",
+              "192E1B14E6",
+              "1A0E7AA35A",
+              "1B4A20952A",
+              "1B7F6F29D3",
+              "1C8449EAA9",
+              "20CA66F142",
+              "22CBC58747",
+              "22FA8D9B39",
+              "23474ED005",
+              "243AC0ADBF",
+              "26B9376DF4",
+              "2867089ED5",
+              "29E761FD63",
+              "2AE871EE84",
+              "2BA895D4C8",
+              "2BE4543254",
+              "2D34EB4C09",
+              "2DA869D017",
+              "2E61111DA9",
+              "2EDA17D4B9",
+              "2FE67E13ED",
+              "3076405B63",
+              "316529E3F0",
+              "3231EDC57E",
+              "32BE41EC9F",
+              "33AF2877B6",
+              "363B0FE15D",
+              "38270A696E",
+              "38D8C01BE7",
+              "38F8F01B44",
+              "3B55DFA76F",
+              "3BE493DDC0",
+              "3EB53D7B0B",
+              "42323D60B7",
+              "437C11C11E",
+              "447290B14E",
+              "465A021822",
+              "4859FB569E",
+              "4A788632AC",
+              "4AE6E24368",
+              "51949E6307",
+              "51BBFF0DD0",
+              "523B81D097",
+              "53A291B033",
+              "541E8AB8C8",
+              "54A96C0289",
+              "567F695250",
+              "56EC468E8A",
+              "57C749D692",
+              "57F7E88A25",
+              "584357BC33",
+              "596237551B",
+              "5A3997752E",
+              "5BD05C4693",
+              "5EDAC02D51",
+              "5F5455994F",
+              "601972C340",
+              "6066BE62FA",
+              "624B59D2F3",
+              "637DEB5DFE",
+              "63BAE02F58",
+              "672A6F89A0",
+              "6777087A65",
+              "692E6A04AE",
+              "69A2A74A71",
+              "6A0341F2E7",
+              "6B0D6902FC",
+              "6D74C04321",
+              "704D40CE3E",
+              "714E573B01",
+              "71586070AF",
+              "72683BF6DA",
+              "756694F828",
+              "75D711585A",
+              "7646D98E55",
+              "7664C9ECB3",
+              "7789E1707D",
+              "77BAF0C7EB",
+              "780B2E3571",
+              "7CED68324E",
+              "7E38DA8C5C",
+              "8585201505",
+              "882AC6B0FD",
+              "8A636A76C6",
+              "8B0D5B1C7F",
+              "8BF01BE686",
+              "8C673DC75A",
+              "8E3C0112D1",
+              "8F44621196",
+              "8FFF114F35",
+              "90B307BD96",
+              "943127563F",
+              "9761F52B7A",
+              "9847562542",
+              "992944EB87",
+              "99A9950382",
+              "9B21B718E6",
+              "9CD66E8D66",
+              "9D5CF13BC3",
+              "9FAE08B2DD",
+              "A2FF80BF2B",
+              "A544A582CE",
+              "A877B73223",
+              "AB315D00C8",
+              "ABCD296A6B",
+              "ACF63C9D30",
+              "AE4D032613",
+              "AFB19DE6AF",
+              "AFEB3F4F52",
+              "B041A7CCE0",
+              "B25EB8A4A5",
+              "B3322C893B",
+              "B3A5423294",
+              "B9D048E897",
+              "BA909D1EC1",
+              "BC7B8FBA02",
+              "C40071D3F2",
+              "C4F62C8D11",
+              "C64FA5EB16",
+              "C9F771156C",
+              "CF1D8766BC",
+              "CF669D93B4",
+              "CF71109442",
+              "CFBB601F08",
+              "D10E38307C",
+              "D10F6E2016",
+              "D463A1CBF6",
+              "D48E5F4231",
+              "D57F65EAD9",
+              "D786703EF6",
+              "D7EC9D2AF0",
+              "D889E822A2",
+              "D9B4D9BF62",
+              "DA7EEB8A80",
+              "DBF6BE7398",
+              "DC5593DE1F",
+              "E00FBD57DC",
+              "E05BF7596E",
+              "E19EF764BF",
+              "E383C32DC8",
+              "E54968A2F1",
+              "E5AC8E5380",
+              "E5AD8765FB",
+              "E6334D9B6E",
+              "E832A2B63A",
+              "EA743FD519",
+              "EB091EC70F",
+              "EBA6C2F6D3",
+              "EBEA251721",
+              "F20AA83069",
+              "F222817CAC",
+              "F33296ACC8",
+              "F47DBFE0CC",
+              "F484103C5F",
+              "F813CFCA9C",
+              "F898776CE6",
+              "FEE169F87E",
+              "FF2E3BBD8F"
+            ]
+          }
+        },
+        "follow": true
+      }
+    ]
+  }
+}
