@@ -79,6 +79,25 @@ def is_empty(v) -> bool:
     return v is None or (isinstance(v, str) and v.strip() == "")
 
 
+def load_meta(value):
+    """Return the metadata_json value as a dict.
+
+    SQLite stores this column as a JSON string; PostgreSQL's json/jsonb type is
+    returned already parsed as a dict. Accept either. Returns (meta, ok) where
+    ok is False only when a non-empty value could not be interpreted."""
+    if value is None or value == "":
+        return {}, True
+    if isinstance(value, dict):
+        return value, True
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            return {}, False
+        return (parsed, True) if isinstance(parsed, dict) else ({}, True)
+    return {}, False
+
+
 def non_ascii_frac(s: str) -> float:
     letters = [c for c in s if c.isalpha()]
     if not letters:
@@ -266,10 +285,8 @@ def analyze(db_path, project, tracking_csv, only_spider=None):
         sp = r["spider"]
         bucket = per_spider[sp]
         bucket["rows"] += 1
-        try:
-            meta = json.loads(r["metadata_json"]) if r["metadata_json"] else {}
-        except (json.JSONDecodeError, TypeError):
-            meta = {}
+        meta, ok = load_meta(r["metadata_json"])
+        if not ok:
             bucket["code_counts"]["meta_unparseable"] += 1
 
         desc = meta.get("description")

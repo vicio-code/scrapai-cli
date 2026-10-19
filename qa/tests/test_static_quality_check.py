@@ -25,6 +25,36 @@ def codes(issues):
 
 
 # ---------------------------------------------------------------------------
+# load_meta — metadata_json may arrive as a JSON string (SQLite) or an
+# already-parsed dict (PostgreSQL json/jsonb). Both must work.
+# ---------------------------------------------------------------------------
+def test_load_meta_json_string():
+    meta, ok = dq.load_meta('{"description": "x", "location": "NY"}')
+    assert ok and meta == {"description": "x", "location": "NY"}
+
+
+def test_load_meta_already_dict():
+    d = {"description": "x"}
+    meta, ok = dq.load_meta(d)
+    assert ok and meta is d
+
+
+def test_load_meta_empty_is_ok():
+    assert dq.load_meta(None) == ({}, True)
+    assert dq.load_meta("") == ({}, True)
+
+
+def test_load_meta_bad_string_is_not_ok():
+    meta, ok = dq.load_meta("{ not json")
+    assert meta == {} and ok is False
+
+
+def test_load_meta_non_object_json_is_ok_but_empty():
+    # valid JSON that is not an object (e.g. a list) yields no fields
+    assert dq.load_meta("[1, 2]") == ({}, True)
+
+
+# ---------------------------------------------------------------------------
 # TITLE
 # ---------------------------------------------------------------------------
 def test_title_good():
