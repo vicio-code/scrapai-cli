@@ -88,14 +88,84 @@ def test_sitemap_is_healthy():
     assert _decide([], follow=False, sitemap=True) == "OK"
 
 
+# ---- real analyze_config() + lint_files() (the CI entry point) -------------
+
+def _codes(issues):
+    return {c for c, _ in issues}
+
+
+def test_analyze_config_frozen_url_list():
+    issues = cl.analyze_config(
+        "x", ["https://x.com/job/1", "https://x.com/job/2"],
+        settings={}, has_follow_rule=False, extract_fields={"title", "description", "employer", "location"})
+    assert "FROZEN_ENUMERATION" in _codes(issues)
+
+
+def test_analyze_config_missing_required_field():
+    issues = cl.analyze_config(
+        "x", ["https://x.com/jobs"], settings={}, has_follow_rule=True,
+        extract_fields={"title", "description"})  # employer + location missing
+    assert "NO_REQUIRED_SRC" in _codes(issues)
+
+
+def test_lint_files_on_sections_config(tmp_path):
+    # a frozen sections config written to disk — the CI path
+    import json as _json
+    cfg = {
+        "name": "frozen_demo",
+        "start_urls": ["https://x.com/job/111", "https://x.com/job/222"],
+        "sections": [{"match": ["/job/.*"], "follow": False,
+                      "extract": {"title": {"css": "h1"}, "description": {"css": "div"},
+                                  "employer": {"css": "a"}, "location": {"css": "span"}}}],
+        "settings": {},
+    }
+    p = tmp_path / "frozen_demo.json"
+    p.write_text(_json.dumps(cfg))
+    findings = cl.lint_files([str(p)])
+    assert any(f["code"] == "FROZEN_ENUMERATION" for f in findings)
+
+
+def test_lint_files_healthy_follow_config(tmp_path):
+    import json as _json
+    cfg = {
+        "name": "healthy_demo",
+        "start_urls": ["https://x.com/jobs"],
+        "sections": [
+            {"match": [".*"], "follow": True},
+            {"match": ["/job/.*"], "follow": False,
+             "extract": {"title": {"css": "h1"}, "description": {"css": "d"},
+                         "employer": {"css": "a"}, "location": {"css": "s"}}}],
+        "settings": {},
+    }
+    p = tmp_path / "healthy_demo.json"
+    p.write_text(_json.dumps(cfg))
+    assert cl.lint_files([str(p)]) == []
+
+
+def test_lint_files_unreadable(tmp_path):
+    p = tmp_path / "broken.json"
+    p.write_text("{ not valid json")
+    findings = cl.lint_files([str(p)])
+    assert any(f["code"] == "UNREADABLE" for f in findings)
+
+
 def _main():
-    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
+    import tempfile
+    fns = [(k, v) for k, v in sorted(globals().items()) if k.startswith("test_")]
     passed = failed = 0
-    for fn in fns:
+    for name, fn in fns:
         try:
-            fn(); passed += 1
+            # supply a tmp dir to tests that take one
+            if "tmp_path" in fn.__code__.co_varnames[:fn.__code__.co_argcount]:
+                import pathlib
+                with tempfile.TemporaryDirectory() as d:
+                    fn(pathlib.Path(d))
+            else:
+                fn()
+            passed += 1
         except AssertionError as e:
-            failed += 1; print(f"FAIL {fn.__name__}: {e}")
+            failed += 1
+            print(f"FAIL {name}: {e}")
     print(f"\n{passed} passed, {failed} failed, {len(fns)} total")
     sys.exit(1 if failed else 0)
 

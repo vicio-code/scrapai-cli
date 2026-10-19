@@ -61,12 +61,19 @@ python qa/drift_check.py snapshot --project jobfeed --out qa/baseline.json
 python qa/drift_check.py compare  --project jobfeed --baseline qa/baseline.json
 
 # Config — flag configs that cannot discover new jobs. Exit 1 if any found.
+# DB mode (data-side):
 python qa/config_check.py --project jobfeed
+# File mode (no DB) — intended for CI on the config store, so a decay-prone
+# config is blocked before it ships:
+python qa/config_check.py templates/collection/*.json
 ```
 
-All three take `--db` (default `scrapai.db`) and `--project` (default `jobfeed`),
-and emit `--json` for CI wiring. Each exits non-zero when it finds something that
-warrants human review, so they drop straight into a cron/CI gate.
+`dq_check` and `drift_check` need a populated DB, so they run where the data
+lives (service-side, scheduled). `config_check` needs only the config, so its
+natural home is CI on the config store (run it in file mode on changed configs).
+
+All take `--json` for CI wiring; each exits non-zero when it finds something that
+warrants human review.
 
 Suggested cadence: `dq_check` nightly / per export; `drift_check compare` weekly
 (re-`snapshot` after each full fleet crawl); `config_check` after any bulk config
