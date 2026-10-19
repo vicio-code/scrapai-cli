@@ -89,6 +89,6 @@ actually used.
 python -m pytest qa/tests/ -q
 ```
 
-44 unit tests with no database and no network. They check each rule twice: that
+Unit tests with no database and no network. They check each rule twice: that
 bad input is flagged, and that good input is left alone (so the checks do not
 raise false alarms).
