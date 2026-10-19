@@ -1,0 +1,415 @@
+#!/usr/bin/env python3
+"""
+Independent data-quality checker for the jobfeed project (Problem 1).
+
+Deliberately independent of scrapai's own extraction/build-time verdict:
+  * opens scrapai.db read-only via sqlite3 (stdlib) — no scrapai imports
+  * re-derives its own judgement of each row from the stored values
+  * never trusts "field is non-null" as "field is good"
+
+It scores every spider so a human reviews only the suspicious ones.
+
+Usage:
+    .venv/bin/python qa/dq_check.py                     # table summary, worst first
+    .venv/bin/python qa/dq_check.py --project jobfeed
+    .venv/bin/python qa/dq_check.py --spider careers_hugoboss_com --rows
+    .venv/bin/python qa/dq_check.py --json report.json  # machine-readable, for CI
+    .venv/bin/python qa/dq_check.py --db /path/to/scrapai.db
+
+Exit status: 0 if no spider is flagged REVIEW/CRITICAL, 1 otherwise (CI gate).
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sqlite3
+import statistics
+import sys
+from collections import Counter, defaultdict
+
+# ----------------------------------------------------------------------------
+# Field conventions for jobfeed (confirmed against the real DB, not the docs):
+#   top-level column:  title
+#   metadata_json keys: description, employer, location, job_id, hints_*
+#   published_date is optional and often absent (ignored for scoring).
+# ----------------------------------------------------------------------------
+
+REQUIRED_META = ("description", "employer", "location")
+
+# Tokens that should never *be* a field value (they mean the selector grabbed a
+# button/label/boilerplate instead of real content). Matched case-insensitively
+# against the whole trimmed value.
+JUNK_VALUES = {
+    "apply", "apply now", "apply here", "save job", "save", "share",
+    "see more", "read more", "learn more", "view job", "back", "next",
+    "n/a", "na", "none", "null", "-", "--", "tbd", "unknown",
+    "accept all cookies", "cookie policy", "sign in", "log in",
+}
+
+# A location that is really a workplace-type flag, not a place.
+WORKPLACE_FLAGS = {"remote", "hybrid", "on site", "on-site", "onsite", "virtual",
+                   "flexible", "work from home", "wfh"}
+
+# Cookie/consent/boilerplate fingerprints that sometimes land in `description`.
+BOILERPLATE_HINTS = (
+    "we use cookies", "this website uses cookies", "cookie preferences",
+    "enable javascript", "please enable javascript", "your browser",
+    "accept all", "privacy policy", "terms of service",
+)
+
+# Heuristic thresholds (tune in the proposal/scheduling note).
+DESC_MIN_LEN = 120          # a real job description is longer than this
+DESC_STUB_LEN = 250         # below this is suspicious even if non-empty
+TITLE_MIN_LEN = 3
+TITLE_MAX_LEN = 160         # longer than this => probably a sentence, not a title
+EMPLOYER_MAX_LEN = 80       # longer => probably a description sentence leaked in
+EMPLOYER_MAX_WORDS = 8
+LOCATION_MAX_LEN = 120
+OUTLIER_Z = 3.0             # per-spider description-length outlier cutoff
+MIN_ROWS_FOR_STATS = 5      # need at least this many rows to trust distributions
+
+# Latin-script check: fraction of letters that are ASCII. Low => wrong language
+# or garbled encoding (we expect en_US per the output schema).
+NON_LATIN_MAX_FRAC = 0.30
+
+
+def connect_ro(db_path: str) -> sqlite3.Connection:
+    """Open the DB strictly read-only so the checker can never mutate data."""
+    uri = f"file:{os.path.abspath(db_path)}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def norm(v):
+    return v.strip() if isinstance(v, str) else v
+
+
+def is_empty(v) -> bool:
+    return v is None or (isinstance(v, str) and v.strip() == "")
+
+
+def non_ascii_frac(s: str) -> float:
+    letters = [c for c in s if c.isalpha()]
+    if not letters:
+        return 0.0
+    non_ascii = sum(1 for c in letters if ord(c) > 127)
+    return non_ascii / len(letters)
+
+
+def looks_like_location(v: str) -> bool:
+    """Cheap positive signal: 'City, ST' / 'City, Country' / has a comma or a
+    multi-word place. We don't require it, we only use its absence as a weak
+    negative when combined with other signals."""
+    v = v.strip()
+    if "," in v:
+        return True
+    # single word that is a known place-ish token is still ok (e.g. 'London')
+    return bool(re.match(r"^[A-Z][\w .'-]{1,}$", v))
+
+
+# ---- per-row checks: return a list of (severity, code, note) ----------------
+# severity: 'crit' (row is unusable) | 'warn' (suspicious) | 'info'
+
+def check_title(title):
+    out = []
+    if is_empty(title):
+        out.append(("crit", "title_empty", "title is null/empty"))
+        return out
+    t = title.strip()
+    low = t.lower()
+    if low in JUNK_VALUES:
+        out.append(("crit", "title_junk", f"title is a UI label: {t!r}"))
+    if len(t) < TITLE_MIN_LEN:
+        out.append(("warn", "title_short", f"title too short: {t!r}"))
+    if len(t) > TITLE_MAX_LEN:
+        out.append(("warn", "title_long", f"title {len(t)} chars — likely a sentence"))
+    if non_ascii_frac(t) > NON_LATIN_MAX_FRAC:
+        out.append(("warn", "title_nonlatin", "title mostly non-Latin — wrong language?"))
+    return out
+
+
+def check_description(desc):
+    out = []
+    if is_empty(desc):
+        out.append(("crit", "desc_empty", "description is null/empty"))
+        return out
+    d = desc.strip()
+    low = d.lower()
+    if len(d) < DESC_MIN_LEN:
+        out.append(("crit", "desc_too_short", f"description only {len(d)} chars"))
+    elif len(d) < DESC_STUB_LEN:
+        out.append(("warn", "desc_stub", f"description short ({len(d)} chars) — maybe a stub"))
+    # Boilerplate only matters when it *dominates* the text. A long, real job
+    # description that merely has 'privacy policy' in a footer is fine; a short
+    # value that is mostly a cookie banner is not. Fire only when the text is
+    # short OR a boilerplate hint sits in the opening of the value.
+    hit = next((h for h in BOILERPLATE_HINTS if h in low), None)
+    if hit:
+        opening = low[:200]
+        if len(d) < DESC_STUB_LEN or hit in opening:
+            out.append(("warn", "desc_boilerplate",
+                        f"description opens with/consists of boilerplate: {hit!r}"))
+    if low in JUNK_VALUES:
+        out.append(("crit", "desc_junk", f"description is a UI label: {d[:40]!r}"))
+    return out
+
+
+def check_employer(employer, spider_name, expected_employer=None):
+    out = []
+    if is_empty(employer):
+        out.append(("crit", "employer_empty", "employer is null/empty"))
+        return out
+    e = employer.strip()
+    low = e.lower()
+    if low in JUNK_VALUES:
+        out.append(("crit", "employer_junk", f"employer is a UI label: {e!r}"))
+    if len(e) > EMPLOYER_MAX_LEN or len(e.split()) > EMPLOYER_MAX_WORDS:
+        out.append(("warn", "employer_sentence", f"employer looks like a sentence: {e[:50]!r}"))
+    # cross-field: does employer resemble the expected company from tracking.csv?
+    if expected_employer:
+        if not _soft_match(e, expected_employer):
+            out.append(("info", "employer_mismatch",
+                                    f"employer {e!r} != expected {expected_employer!r} (verify)"))
+    return out
+
+
+def check_location(location):
+    out = []
+    if is_empty(location):
+        out.append(("crit", "location_empty", "location is null/empty"))
+        return out
+    loc = location.strip()
+    low = loc.lower()
+    if low in JUNK_VALUES:
+        out.append(("crit", "location_junk", f"location is a UI label: {loc!r}"))
+    if low in WORKPLACE_FLAGS:
+        out.append(("warn", "location_is_flag",
+                    f"location is a workplace-type flag, not a place: {loc!r}"))
+    if len(loc) > LOCATION_MAX_LEN:
+        out.append(("warn", "location_long", f"location {len(loc)} chars — likely wrong field"))
+    # A street address (number + street-type word) means the selector grabbed a
+    # facility/address block instead of the City, ST. Real defect, not just odd
+    # shape (seen on Workday health-system tenants).
+    elif _looks_like_street_address(loc):
+        out.append(("warn", "location_street_address",
+                    f"location looks like a street address, not a city: {loc!r}"))
+    elif not looks_like_location(loc) and low not in WORKPLACE_FLAGS:
+        out.append(("info", "location_shape", f"location has unusual shape: {loc!r}"))
+    return out
+
+
+_STREET_TYPES = (
+    "st", "street", "ave", "avenue", "blvd", "boulevard", "rd", "road", "dr",
+    "drive", "ln", "lane", "way", "ct", "court", "pkwy", "parkway", "hwy",
+    "highway", "ste", "suite", "fl", "floor",
+)
+
+
+def _looks_like_street_address(loc: str) -> bool:
+    """A number followed somewhere by a street-type token => street address."""
+    low = loc.lower()
+    if not re.search(r"\b\d{1,6}\b", low):
+        return False
+    toks = set(re.findall(r"[a-z]+", low))
+    return bool(toks & set(_STREET_TYPES))
+
+
+def _soft_match(a: str, b: str) -> bool:
+    """Loose token-overlap match for company names (handles 'Hugo Boss' vs
+    'HUGO BOSS AG', 'Beam Therapeutics' vs 'Beam')."""
+    def toks(s):
+        return set(re.findall(r"[a-z0-9]+", s.lower())) - {
+            "inc", "llc", "ltd", "ag", "sa", "corp", "co", "group", "the",
+            "international", "holdings", "plc", "gmbh",
+        }
+    ta, tb = toks(a), toks(b)
+    if not ta or not tb:
+        return True  # can't judge
+    return len(ta & tb) > 0
+
+
+def load_expected_employers(tracking_csv):
+    """spider_name -> employer, from tracking.csv (the registry of truth)."""
+    out = {}
+    if not tracking_csv or not os.path.exists(tracking_csv):
+        return out
+    import csv
+    with open(tracking_csv, newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            sp = (row.get("spider_name") or "").strip()
+            emp = (row.get("employer") or "").strip()
+            if sp:
+                out[sp] = emp
+    return out
+
+
+SEV_WEIGHT = {"crit": 10, "warn": 3, "info": 1}
+
+
+def analyze(db_path, project, tracking_csv, only_spider=None):
+    conn = connect_ro(db_path)
+    expected = load_expected_employers(tracking_csv)
+
+    q = """
+        SELECT s.name AS spider, i.id, i.url, i.title, i.published_date,
+               i.metadata_json
+        FROM scraped_items i JOIN spiders s ON i.spider_id = s.id
+        WHERE s.project = ?
+    """
+    params = [project]
+    if only_spider:
+        q += " AND s.name = ?"
+        params.append(only_spider)
+
+    per_spider = defaultdict(lambda: {
+        "rows": 0, "row_issues": [], "code_counts": Counter(),
+        "crit_rows": 0, "warn_rows": 0, "desc_lens": [], "clean_rows": 0,
+    })
+
+    for r in conn.execute(q, params):
+        sp = r["spider"]
+        bucket = per_spider[sp]
+        bucket["rows"] += 1
+        try:
+            meta = json.loads(r["metadata_json"]) if r["metadata_json"] else {}
+        except (json.JSONDecodeError, TypeError):
+            meta = {}
+            bucket["code_counts"]["meta_unparseable"] += 1
+
+        desc = meta.get("description")
+        if isinstance(desc, str):
+            bucket["desc_lens"].append(len(desc.strip()))
+
+        issues = []
+        issues += check_title(r["title"])
+        issues += check_description(desc)
+        issues += check_employer(meta.get("employer"), sp, expected.get(sp))
+        issues += check_location(meta.get("location"))
+
+        sevset = {s for s, _, _ in issues}
+        if "crit" in sevset:
+            bucket["crit_rows"] += 1
+        elif "warn" in sevset:
+            bucket["warn_rows"] += 1
+        if not issues:
+            bucket["clean_rows"] += 1
+
+        for sev, code, note in issues:
+            bucket["code_counts"][code] += 1
+        if issues:
+            bucket["row_issues"].append({
+                "id": r["id"], "url": r["url"],
+                "issues": [{"sev": s, "code": c, "note": n} for s, c, n in issues],
+            })
+
+    # statistical pass: per-spider description-length outliers
+    for sp, b in per_spider.items():
+        lens = b["desc_lens"]
+        if len(lens) >= MIN_ROWS_FOR_STATS:
+            mean = statistics.mean(lens)
+            stdev = statistics.pstdev(lens)
+            if stdev > 0:
+                outliers = [l for l in lens if abs(l - mean) / stdev > OUTLIER_Z]
+                if outliers:
+                    b["code_counts"]["desc_len_outlier"] += len(outliers)
+            b["desc_len_mean"] = round(mean, 1)
+            b["desc_len_stdev"] = round(stdev, 1)
+
+    conn.close()
+    return per_spider, expected
+
+
+def score_spider(b):
+    """Return (score, verdict). Score is a weighted issue density per row."""
+    rows = max(b["rows"], 1)
+    weighted = sum(SEV_WEIGHT.get("crit", 0) * 0 for _ in [])  # placeholder
+    weighted = (
+        b["crit_rows"] * SEV_WEIGHT["crit"]
+        + b["warn_rows"] * SEV_WEIGHT["warn"]
+    )
+    density = weighted / rows
+    crit_frac = b["crit_rows"] / rows
+    if crit_frac >= 0.25 or density >= 5:
+        verdict = "CRITICAL"
+    elif b["crit_rows"] > 0 or density >= 1.5:
+        verdict = "REVIEW"
+    elif b["warn_rows"] > 0:
+        verdict = "WATCH"
+    else:
+        verdict = "OK"
+    return round(density, 2), verdict
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Independent jobfeed data-quality checker")
+    ap.add_argument("--db", default="scrapai.db")
+    ap.add_argument("--project", default="jobfeed")
+    ap.add_argument("--tracking", default="data/jobfeed/tracking.csv")
+    ap.add_argument("--spider", default=None, help="restrict to one spider")
+    ap.add_argument("--rows", action="store_true", help="print flagged rows")
+    ap.add_argument("--json", metavar="PATH", help="write machine-readable report")
+    ap.add_argument("--all", action="store_true", help="show OK spiders too")
+    args = ap.parse_args()
+
+    per_spider, _ = analyze(args.db, args.project, args.tracking, args.spider)
+
+    results = []
+    for sp, b in per_spider.items():
+        density, verdict = score_spider(b)
+        results.append((verdict, density, sp, b))
+
+    order = {"CRITICAL": 0, "REVIEW": 1, "WATCH": 2, "OK": 3}
+    results.sort(key=lambda t: (order[t[0]], -t[1]))
+
+    flagged = [r for r in results if r[0] in ("CRITICAL", "REVIEW")]
+
+    print(f"\nData-quality report — project={args.project}  "
+          f"spiders={len(results)}  flagged={len(flagged)}\n")
+    print(f"{'VERDICT':9} {'SCORE':>6} {'ROWS':>5} {'CRIT':>5} {'WARN':>5}  SPIDER / top issues")
+    print("-" * 92)
+    for verdict, density, sp, b in results:
+        if verdict == "OK" and not args.all:
+            continue
+        top = ", ".join(f"{c}×{n}" for c, n in b["code_counts"].most_common(3))
+        print(f"{verdict:9} {density:>6} {b['rows']:>5} {b['crit_rows']:>5} "
+              f"{b['warn_rows']:>5}  {sp}")
+        if top:
+            print(f"{'':29}   {top}")
+
+    if args.rows:
+        for verdict, density, sp, b in results:
+            if not b["row_issues"]:
+                continue
+            print(f"\n=== {sp} ({verdict}) ===")
+            for ri in b["row_issues"][:20]:
+                codes = ", ".join(f"[{i['sev']}]{i['code']}" for i in ri["issues"])
+                print(f"  #{ri['id']} {codes}")
+                print(f"      {ri['url']}")
+
+    if args.json:
+        payload = {
+            "project": args.project,
+            "spiders": [
+                {
+                    "spider": sp, "verdict": v, "score": d,
+                    "rows": b["rows"], "crit_rows": b["crit_rows"],
+                    "warn_rows": b["warn_rows"], "clean_rows": b["clean_rows"],
+                    "codes": dict(b["code_counts"]),
+                    "desc_len_mean": b.get("desc_len_mean"),
+                    "desc_len_stdev": b.get("desc_len_stdev"),
+                }
+                for v, d, sp, b in results
+            ],
+        }
+        with open(args.json, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+        print(f"\nWrote {args.json}")
+
+    sys.exit(1 if flagged else 0)
+
+
+if __name__ == "__main__":
+    main()
