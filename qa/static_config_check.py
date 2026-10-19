@@ -1,52 +1,47 @@
 #!/usr/bin/env python3
 """
-Config-shape checker for jobfeed spiders (QA layer 3).
+Checks whether a spider's configuration can keep finding new content over time.
 
-The two data checkers (dq_check, drift_check) inspect the OUTPUT rows. This one
-inspects the spider CONFIG itself, read-only from the DB, to catch a STRUCTURAL
-class of problem that only surfaces in the data much later — after jobs have
-already decayed.
+A spider is defined by a config: where to start, which links to follow, and
+which fields to extract. This script inspects that config (not the scraped
+data) to catch a structural problem that only shows up much later: a config
+that lists exactly WHICH pages to scrape instead of DISCOVERING pages on its
+own. Once those specific pages go away, the spider quietly returns nothing.
 
-THE CLASS OF BUG (not a single instance):
-    A config that hard-codes WHICH jobs exist instead of DISCOVERING which jobs
-    exist. The job identities are a frozen snapshot; the config has no way to
-    pick up new postings or notice old ones disappear. It silently decays to
-    worthless. This shows up in several disguises:
-      * hard-coded job-detail URLs in start_urls with no follow rule
-        (careers_hugoboss_com, www_multitrabajos_com)
-      * a GENERATED_URLS `list` var of hard-coded ids/tokens, with no
-        range/date generation, sitemap, or link-following to find new ones
-        (guess, apply_workable_com_guess, flyzipline_com)
-    A HEALTHY config instead follows a listing, enumerates a page RANGE/date,
-    or uses a sitemap — so new jobs appear automatically.
+Example of the bad shape:
+    A config whose start URLs are a fixed list of individual item pages
+    (e.g. "/jobs/1001", "/jobs/1002") with no rule to follow links, no page
+    numbering, and no sitemap. When those items expire, nothing replaces them.
 
-The checker detects the CLASS: "does this spider enumerate specific job
-identities AND lack any discovery mechanism?" — so it also flags shapes not
-seen yet (e.g. a hard-coded list in formdata), not just the known examples.
+Example of a healthy shape:
+    A config that starts on a listing page and follows links to items, OR
+    sweeps page numbers / dates, OR reads a sitemap — so new items appear
+    automatically.
 
 Checks (all read-only):
-  FROZEN_ENUMERATION — enumerates specific job identities (hard-coded URLs or a
-                       GENERATED_URLS `list` var) with no link-following,
-                       range/date generation, sitemap, or pagination to
-                       discover new jobs. Will decay as those jobs expire.
-  NO_DISCOVERY       — no follow rule, no generated URLs, no sitemap, and a
-                       single/zero start_url: scrapes a fixed tiny set only
-                       (often a test leftover).
-  NO_REQUIRED_SRC    — a required non-core field has no selector in any
-                       callback (config structurally cannot populate it).
+  FROZEN_ENUMERATION — the config names specific pages to scrape (a fixed list
+                       of item URLs, or a generated-URL list of fixed ids) and
+                       has no way to discover new ones. It will decay over time.
+  NO_DISCOVERY       — no follow rule, no generated URLs, no sitemap, and at
+                       most one start URL: it only ever scrapes a tiny fixed
+                       set (often a leftover from testing).
+  NO_REQUIRED_SRC    — a required field has no selector anywhere in the config,
+                       so the config structurally cannot populate it.
 
-Note on tuning: GENERATED_URLS with a `range`/`date` var (att_jobs page sweep)
-is treated as HEALTHY discovery. The one soft caveat — a range that has become
-too small for a grown site — is a reality-vs-config drift a static checker
-cannot see; drift_check catches that via volume drop.
+Two ways to run (same checks):
+  DATABASE mode — read spider configs from the database:
+      python static_config_check.py --project <name>
+  FILE mode — lint config JSON files directly, no database needed (useful as a
+      CI check that blocks a decay-prone config before it is deployed):
+      python static_config_check.py path/to/config1.json path/to/config2.json
 
-Two modes (same checks):
-  DB   — read spiders from the database (data-side use):
-           python qa/config_check.py --project jobfeed
-  FILE — lint raw config JSON directly, no DB (intended for CI on the config
-         store, so a decay-prone config is blocked before it ships):
-           python qa/config_check.py templates/collection/*.json
-Exit status: 1 if any FROZEN_ENUMERATION / NO_REQUIRED_SRC / UNREADABLE, else 0.
+Which database DATABASE mode reads is resolved in this order:
+    1. the --db value
+    2. the DATABASE_URL environment variable
+    3. a local SQLite file named scrapai.db
+
+Exit status: 1 if any FROZEN_ENUMERATION / NO_REQUIRED_SRC / UNREADABLE finding,
+else 0 (so CI fails when a config needs attention).
 """
 from __future__ import annotations
 
@@ -54,8 +49,9 @@ import argparse
 import json
 import os
 import re
-import sqlite3
 import sys
+
+from _db import connect_ro
 
 REQUIRED_FIELDS = ("title", "description", "employer", "location")
 
@@ -63,13 +59,6 @@ REQUIRED_FIELDS = ("title", "description", "employer", "location")
 # rather than a listing/section landing page.
 JOB_DETAIL_HINTS = re.compile(
     r"/job/|/jobs/|/empleos/|/positions/|/career[s]?/.+/|-\d{5,}", re.I)
-
-
-def connect_ro(db_path):
-    uri = f"file:{os.path.abspath(db_path)}?mode=ro"
-    conn = sqlite3.connect(uri, uri=True)
-    conn.row_factory = sqlite3.Row
-    return conn
 
 
 def _looks_like_detail(url):
@@ -221,12 +210,16 @@ def lint_files(paths):
 
 def main():
     ap = argparse.ArgumentParser(
-        description="scrapai spider config-shape checker (DB or raw-JSON mode)")
+        description="Check spider configs for decay-prone shapes "
+                    "(reads the database, or lints config JSON files directly).")
     ap.add_argument("files", nargs="*",
-                    help="config JSON files to lint (CI mode, no DB needed). "
-                         "If omitted, reads spiders from the DB.")
-    ap.add_argument("--db", default="scrapai.db", help="DB mode: database path")
-    ap.add_argument("--project", default="jobfeed", help="DB mode: project name")
+                    help="config JSON files to lint; needs no database. "
+                         "If omitted, reads spider configs from the database.")
+    ap.add_argument("--db", default=None,
+                    help="database URL or sqlite path (used only when no files "
+                         "are given); defaults to $DATABASE_URL, then scrapai.db")
+    ap.add_argument("--project", default="jobfeed",
+                    help="only check spiders in this project (database mode)")
     ap.add_argument("--json", default=None, help="write findings to this JSON file")
     args = ap.parse_args()
 

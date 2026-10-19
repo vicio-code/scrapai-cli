@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
 """
-Unit tests for the heuristic data-quality checker (qa/dq_check.py).
+Unit tests for static_quality_check.py.
 
-These are PURE tests: synthetic field values, no DB, no network, no crawling.
-They prove two things the real-data validation could not prove on its own:
-  1. the checker FLAGS each class of bad value (true positives), and
-  2. the checker stays QUIET on good values (no false positives).
+These tests use made-up field values only — no database, no network. They check
+each rule twice:
+  1. a bad value IS flagged, and
+  2. a good value is NOT flagged (so the checks do not raise false alarms).
 
 Run:
-    .venv/bin/python -m pytest qa/tests/ -q
+    python -m pytest qa/tests/ -q
     # or without pytest:
-    .venv/bin/python qa/tests/test_dq_check.py
+    python qa/tests/test_static_quality_check.py
 """
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import dq_check as dq  # noqa: E402
+import static_quality_check as dq  # noqa: E402
 
 
 def codes(issues):
@@ -54,7 +54,7 @@ def test_title_nonlatin_flagged():
 
 
 def test_title_international_but_latin_ok():
-    # accents are fine — must NOT flag (real HUGO BOSS French title)
+    # Accented Latin text is still Latin script — must NOT be flagged.
     assert dq.check_title("Contrôleur de Gestion France - CDD 9 mois (H/F)") == []
 
 
@@ -87,8 +87,9 @@ def test_description_boilerplate_opening_flagged():
 
 
 def test_description_privacy_in_footer_not_flagged():
-    # long, real description that merely mentions privacy policy at the end.
-    # This is the false positive we fixed — must stay quiet.
+    # A long, real description that only mentions "privacy policy" at the very
+    # end must stay quiet — the boilerplate rule looks at the opening, not a
+    # stray phrase in a footer.
     text = ("About the role. " * 100) + " See our privacy policy for details."
     assert "desc_boilerplate" not in codes(dq.check_description(text))
 
@@ -97,7 +98,7 @@ def test_description_privacy_in_footer_not_flagged():
 # EMPLOYER
 # ---------------------------------------------------------------------------
 def test_employer_good():
-    assert dq.check_employer("Hugo Boss", "careers_hugoboss_com") == []
+    assert dq.check_employer("Acme Corporation", "example_spider") == []
 
 
 def test_employer_empty_is_critical():
@@ -110,8 +111,9 @@ def test_employer_sentence_flagged():
 
 
 def test_employer_acronym_vs_expansion_is_info_not_warn():
-    # 'IJM' expected, data says the full name — same company, must be info only.
-    issues = dq.check_employer("International Justice Mission", "ijm", "IJM")
+    # Full name stored, initials expected (same company). A name that does not
+    # match the expectation must be reported at most as info, never warn/crit.
+    issues = dq.check_employer("Acme Data Systems", "example_spider", "ADS")
     sev_for_mismatch = [s for s, c, _ in issues if c == "employer_mismatch"]
     # either no mismatch raised, or raised only at info level (never warn/crit)
     assert all(s == "info" for s in sev_for_mismatch)
@@ -134,11 +136,12 @@ def test_location_workplace_flag_flagged():
 
 
 def test_location_street_address_flagged():
-    # the real target_wd5 / aah defect: street address instead of City, ST
+    # A street address (number + street-type word) means the selector grabbed a
+    # building address instead of a city/region.
     assert "location_street_address" in codes(
-        dq.check_location("1080 Third Crossing Way, Mebane,NC 27302"))
+        dq.check_location("1080 Third Crossing Way, Mebane, NC 27302"))
     assert "location_street_address" in codes(
-        dq.check_location("Advocate Trinity Hospital - 2320 E 93rd St"))
+        dq.check_location("Main Clinic - 2320 E 93rd St"))
 
 
 def test_location_region_hybrid_combo_not_street():
@@ -156,7 +159,7 @@ def test_location_plain_city_not_street():
 # SCORING / TRIAGE
 # ---------------------------------------------------------------------------
 def test_scoring_critical_when_many_bad_rows():
-    # 8 of 15 rows critical => CRITICAL (the hugoboss shape)
+    # more than a quarter of rows have a critical problem => CRITICAL
     bucket = {"rows": 15, "crit_rows": 8, "warn_rows": 0}
     _, verdict = dq.score_spider(bucket)
     assert verdict == "CRITICAL"

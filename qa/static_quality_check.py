@@ -1,22 +1,40 @@
 #!/usr/bin/env python3
 """
-Independent data-quality checker for the jobfeed project (Problem 1).
+Checks the quality of scraped rows already stored in the database.
 
-Deliberately independent of scrapai's own extraction/build-time verdict:
-  * opens scrapai.db read-only via sqlite3 (stdlib) — no scrapai imports
-  * re-derives its own judgement of each row from the stored values
-  * never trusts "field is non-null" as "field is good"
+Each scraped row describes one job posting. This script reads those rows
+(never writing) and flags the ones whose fields look wrong: empty, a leftover
+button label instead of real text, a description that is actually a cookie
+banner, a "location" that is really a work-style tag like "Remote", and so on.
 
-It scores every spider so a human reviews only the suspicious ones.
+It groups rows by spider (one spider = one source website) and gives each spider
+a verdict so a human only has to look at the suspicious ones:
+    CRITICAL  many rows are unusable
+    REVIEW    at least one unusable row, or a lot of suspicious ones
+    WATCH     only mild/odd values, probably fine
+    OK        nothing flagged
+
+How a row is stored (so the checks below make sense):
+    - title           is a plain column on the row
+    - description, employer, location are keys inside a JSON column
+      called metadata_json
+    - published_date  is optional and often missing; it is ignored here
+
+Which database it reads is resolved in this order:
+    1. the --db value
+    2. the DATABASE_URL environment variable
+    3. a local SQLite file named scrapai.db
+This works unchanged whether the database is SQLite (local) or PostgreSQL.
 
 Usage:
-    .venv/bin/python qa/dq_check.py                     # table summary, worst first
-    .venv/bin/python qa/dq_check.py --project jobfeed
-    .venv/bin/python qa/dq_check.py --spider careers_hugoboss_com --rows
-    .venv/bin/python qa/dq_check.py --json report.json  # machine-readable, for CI
-    .venv/bin/python qa/dq_check.py --db /path/to/scrapai.db
+    python static_quality_check.py                      # table summary, worst first
+    python static_quality_check.py --project <name>     # restrict to one project
+    python static_quality_check.py --spider <name> --rows   # list a spider's bad rows
+    python static_quality_check.py --json report.json   # machine-readable, for CI
+    python static_quality_check.py --db postgresql://user:pass@host/dbname
 
-Exit status: 0 if no spider is flagged REVIEW/CRITICAL, 1 otherwise (CI gate).
+Exit status: 0 if nothing is flagged REVIEW/CRITICAL, 1 otherwise (so CI fails
+when review is needed).
 """
 from __future__ import annotations
 
@@ -24,16 +42,15 @@ import argparse
 import json
 import os
 import re
-import sqlite3
 import statistics
 import sys
 from collections import Counter, defaultdict
 
+from _db import connect_ro
+
 # ----------------------------------------------------------------------------
-# Field conventions for jobfeed (confirmed against the real DB, not the docs):
-#   top-level column:  title
-#   metadata_json keys: description, employer, location, job_id, hints_*
-#   published_date is optional and often absent (ignored for scoring).
+# The three fields that must be present and sensible for a row to be useful.
+# They live inside the row's metadata_json column (title is a separate column).
 # ----------------------------------------------------------------------------
 
 REQUIRED_META = ("description", "employer", "location")
@@ -59,7 +76,7 @@ BOILERPLATE_HINTS = (
     "accept all", "privacy policy", "terms of service",
 )
 
-# Heuristic thresholds (tune in the proposal/scheduling note).
+# Tunable thresholds. Adjust these if the checks are too strict or too loose.
 DESC_MIN_LEN = 120          # a real job description is longer than this
 DESC_STUB_LEN = 250         # below this is suspicious even if non-empty
 TITLE_MIN_LEN = 3
@@ -70,17 +87,10 @@ LOCATION_MAX_LEN = 120
 OUTLIER_Z = 3.0             # per-spider description-length outlier cutoff
 MIN_ROWS_FOR_STATS = 5      # need at least this many rows to trust distributions
 
-# Latin-script check: fraction of letters that are ASCII. Low => wrong language
-# or garbled encoding (we expect en_US per the output schema).
+# Fraction of letters in a value that are non-ASCII. A high fraction means the
+# text is mostly non-Latin script, which usually signals the wrong language was
+# captured or the text is garbled. The content here is expected to be English.
 NON_LATIN_MAX_FRAC = 0.30
-
-
-def connect_ro(db_path: str) -> sqlite3.Connection:
-    """Open the DB strictly read-only so the checker can never mutate data."""
-    uri = f"file:{os.path.abspath(db_path)}?mode=ro"
-    conn = sqlite3.connect(uri, uri=True)
-    conn.row_factory = sqlite3.Row
-    return conn
 
 
 def norm(v):
@@ -168,7 +178,8 @@ def check_employer(employer, spider_name, expected_employer=None):
         out.append(("crit", "employer_junk", f"employer is a UI label: {e!r}"))
     if len(e) > EMPLOYER_MAX_LEN or len(e.split()) > EMPLOYER_MAX_WORDS:
         out.append(("warn", "employer_sentence", f"employer looks like a sentence: {e[:50]!r}"))
-    # cross-field: does employer resemble the expected company from tracking.csv?
+    # Optional cross-check: if an expected employer name was supplied (see
+    # --tracking), warn when the stored employer does not resemble it.
     if expected_employer:
         if not _soft_match(e, expected_employer):
             out.append(("info", "employer_mismatch",
@@ -190,9 +201,8 @@ def check_location(location):
                     f"location is a workplace-type flag, not a place: {loc!r}"))
     if len(loc) > LOCATION_MAX_LEN:
         out.append(("warn", "location_long", f"location {len(loc)} chars — likely wrong field"))
-    # A street address (number + street-type word) means the selector grabbed a
-    # facility/address block instead of the City, ST. Real defect, not just odd
-    # shape (seen on Workday health-system tenants).
+    # A street address (a number plus a street-type word, e.g. "123 Main St")
+    # means the selector grabbed a building address instead of a city/region.
     elif _looks_like_street_address(loc):
         out.append(("warn", "location_street_address",
                     f"location looks like a street address, not a city: {loc!r}"))
@@ -218,8 +228,9 @@ def _looks_like_street_address(loc: str) -> bool:
 
 
 def _soft_match(a: str, b: str) -> bool:
-    """Loose token-overlap match for company names (handles 'Hugo Boss' vs
-    'HUGO BOSS AG', 'Beam Therapeutics' vs 'Beam')."""
+    """True if two company names share at least one meaningful word, after
+    dropping common legal/filler words. This treats name variants as a match,
+    e.g. "Acme" vs "Acme Inc", or "Acme Corporation" vs "Acme Group"."""
     def toks(s):
         return set(re.findall(r"[a-z0-9]+", s.lower())) - {
             "inc", "llc", "ltd", "ag", "sa", "corp", "co", "group", "the",
@@ -232,7 +243,11 @@ def _soft_match(a: str, b: str) -> bool:
 
 
 def load_expected_employers(tracking_csv):
-    """spider_name -> employer, from tracking.csv (the registry of truth)."""
+    """Read a CSV of expected employer names into {spider_name: employer}.
+
+    The CSV must have 'spider_name' and 'employer' columns. It is optional; if
+    the path is missing, this returns an empty map and the employer cross-check
+    is simply skipped."""
     out = {}
     if not tracking_csv or not os.path.exists(tracking_csv):
         return out
@@ -344,10 +359,16 @@ def score_spider(b):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Independent jobfeed data-quality checker")
-    ap.add_argument("--db", default="scrapai.db")
-    ap.add_argument("--project", default="jobfeed")
-    ap.add_argument("--tracking", default="data/jobfeed/tracking.csv")
+    ap = argparse.ArgumentParser(
+        description="Check the quality of scraped rows stored in the database.")
+    ap.add_argument("--db", default=None,
+                    help="database URL or sqlite path; "
+                         "defaults to $DATABASE_URL, then local scrapai.db")
+    ap.add_argument("--project", default="jobfeed",
+                    help="only check spiders in this project")
+    ap.add_argument("--tracking", default="data/jobfeed/tracking.csv",
+                    help="optional CSV of expected employer names "
+                         "(columns: spider_name, employer); skipped if missing")
     ap.add_argument("--spider", default=None, help="restrict to one spider")
     ap.add_argument("--rows", action="store_true", help="print flagged rows")
     ap.add_argument("--json", metavar="PATH", help="write machine-readable report")
