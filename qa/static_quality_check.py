@@ -37,13 +37,6 @@ from collections import Counter, defaultdict
 
 from _db import connect_ro
 
-# ----------------------------------------------------------------------------
-# The three fields that must be present and sensible for a row to be useful.
-# They live inside the row's metadata_json column (title is a separate column).
-# ----------------------------------------------------------------------------
-
-REQUIRED_META = ("description", "employer", "location")
-
 # Tokens that should never *be* a field value (they mean the selector grabbed a
 # button/label/boilerplate instead of real content). Matched case-insensitively
 # against the whole trimmed value.
@@ -80,10 +73,6 @@ MIN_ROWS_FOR_STATS = 5      # need at least this many rows to trust distribution
 # text is mostly non-Latin script, which usually signals the wrong language was
 # captured or the text is garbled. The content here is expected to be English.
 NON_LATIN_MAX_FRAC = 0.30
-
-
-def norm(v):
-    return v.strip() if isinstance(v, str) else v
 
 
 def is_empty(v) -> bool:
@@ -329,7 +318,6 @@ def analyze(db_path, project, tracking_csv, only_spider=None):
 def score_spider(b):
     """Return (score, verdict). Score is a weighted issue density per row."""
     rows = max(b["rows"], 1)
-    weighted = sum(SEV_WEIGHT.get("crit", 0) * 0 for _ in [])  # placeholder
     weighted = (
         b["crit_rows"] * SEV_WEIGHT["crit"]
         + b["warn_rows"] * SEV_WEIGHT["warn"]

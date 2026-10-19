@@ -35,8 +35,6 @@ import sys
 
 from _db import connect_ro
 
-REQUIRED_FIELDS = ("title", "description", "employer", "location")
-
 # A start URL that looks like a specific job detail page (has an id-ish segment)
 # rather than a listing/section landing page.
 JOB_DETAIL_HINTS = re.compile(

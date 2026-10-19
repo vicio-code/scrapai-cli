@@ -97,7 +97,6 @@ class _PostgresConn:
                 "PostgreSQL target requires psycopg2 (pip install psycopg2-binary). "
                 f"DATABASE_URL points at Postgres but the driver is missing: {e}"
             ) from e
-        self._psycopg2 = psycopg2
         self._extras = psycopg2.extras
         self._conn = psycopg2.connect(url)
         # Enforce read-only at the session level: the checker can never write.
@@ -106,6 +105,9 @@ class _PostgresConn:
     def execute(self, sql: str, params=None) -> _Result:
         # Checks are authored in SQLite's "?" placeholder dialect; psycopg2
         # wants "%s". Translate here so no check has to branch on backend.
+        # NOTE: this is a plain text replace. It is safe only because every
+        # query here uses "?" purely as a placeholder. Do not put a literal "?"
+        # or "%" (e.g. a LIKE '%x%') in SQL passed through this path.
         pg_sql = sql.replace("?", "%s")
         cur = self._conn.cursor(cursor_factory=self._extras.RealDictCursor)
         cur.execute(pg_sql, list(params) if params else None)
