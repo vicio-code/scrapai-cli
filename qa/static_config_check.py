@@ -1,47 +1,29 @@
 #!/usr/bin/env python3
 """
-Checks whether a spider's configuration can keep finding new content over time.
+Flags spider configs that will stop finding new content over time.
 
-A spider is defined by a config: where to start, which links to follow, and
-which fields to extract. This script inspects that config (not the scraped
-data) to catch a structural problem that only shows up much later: a config
-that lists exactly WHICH pages to scrape instead of DISCOVERING pages on its
-own. Once those specific pages go away, the spider quietly returns nothing.
+Inspects the config, not the scraped data. A config that lists specific pages
+to scrape (instead of discovering them) quietly returns nothing once those
+pages go away:
+    Bad     start URLs are a fixed list of item pages ("/jobs/1001",
+            "/jobs/1002") with no link-following, page numbering, or sitemap.
+    Healthy starts on a listing and follows links, OR sweeps page numbers /
+            dates, OR reads a sitemap — so new items appear on their own.
 
-Example of the bad shape:
-    A config whose start URLs are a fixed list of individual item pages
-    (e.g. "/jobs/1001", "/jobs/1002") with no rule to follow links, no page
-    numbering, and no sitemap. When those items expire, nothing replaces them.
-
-Example of a healthy shape:
-    A config that starts on a listing page and follows links to items, OR
-    sweeps page numbers / dates, OR reads a sitemap — so new items appear
-    automatically.
-
-Checks (all read-only):
-  FROZEN_ENUMERATION — the config names specific pages to scrape (a fixed list
-                       of item URLs, or a generated-URL list of fixed ids) and
-                       has no way to discover new ones. It will decay over time.
-  NO_DISCOVERY       — no follow rule, no generated URLs, no sitemap, and at
-                       most one start URL: it only ever scrapes a tiny fixed
-                       set (often a leftover from testing).
-  NO_REQUIRED_SRC    — a required field has no selector anywhere in the config,
-                       so the config structurally cannot populate it.
+Findings:
+  FROZEN_ENUMERATION — names specific pages and has no way to discover new ones.
+  NO_DISCOVERY       — no follow rule, generated URLs, or sitemap, and at most
+                       one start URL (often a leftover from testing).
+  NO_REQUIRED_SRC    — a required field has no selector anywhere in the config.
 
 Two ways to run (same checks):
   DATABASE mode — read spider configs from the database:
       python static_config_check.py --project <name>
-  FILE mode — lint config JSON files directly, no database needed (useful as a
-      CI check that blocks a decay-prone config before it is deployed):
+  FILE mode — lint config JSON files directly, no database (useful as a CI
+      check before a config is deployed):
       python static_config_check.py path/to/config1.json path/to/config2.json
 
-Which database DATABASE mode reads is resolved in this order:
-    1. the --db value
-    2. the DATABASE_URL environment variable
-    3. a local SQLite file named scrapai.db
-
-Exit status: 1 if any FROZEN_ENUMERATION / NO_REQUIRED_SRC / UNREADABLE finding,
-else 0 (so CI fails when a config needs attention).
+Exit status: 1 if any FROZEN_ENUMERATION / NO_REQUIRED_SRC / UNREADABLE, else 0.
 """
 from __future__ import annotations
 

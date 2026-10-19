@@ -1,40 +1,29 @@
 #!/usr/bin/env python3
 """
-Checks the quality of scraped rows already stored in the database.
+Flags scraped items whose fields look wrong.
 
-Each scraped row describes one job posting. This script reads those rows
-(never writing) and flags the ones whose fields look wrong: empty, a leftover
-button label instead of real text, a description that is actually a cookie
-banner, a "location" that is really a work-style tag like "Remote", and so on.
-
-It groups rows by spider (one spider = one source website) and gives each spider
-a verdict so a human only has to look at the suspicious ones:
-    CRITICAL  many rows are unusable
-    REVIEW    at least one unusable row, or a lot of suspicious ones
+Reads saved items (never writing) and flags values that look wrong: empty, a
+leftover button label instead of real text, a cookie banner saved as a
+description, a work-style tag like "Remote" where a location should be, and so
+on. Items are grouped by spider (one spider = one source website) and each
+spider gets a verdict, so a human only looks at the suspicious ones:
+    CRITICAL  many items are unusable
+    REVIEW    at least one unusable item, or a lot of suspicious ones
     WATCH     only mild/odd values, probably fine
     OK        nothing flagged
 
-How a row is stored (so the checks below make sense):
-    - title           is a plain column on the row
-    - description, employer, location are keys inside a JSON column
-      called metadata_json
-    - published_date  is optional and often missing; it is ignored here
-
-Which database it reads is resolved in this order:
-    1. the --db value
-    2. the DATABASE_URL environment variable
-    3. a local SQLite file named scrapai.db
-This works unchanged whether the database is SQLite (local) or PostgreSQL.
+Field layout: title is a plain column; description, employer and location are
+keys inside a JSON column named metadata_json; published_date is optional and
+ignored here.
 
 Usage:
     python static_quality_check.py                      # table summary, worst first
     python static_quality_check.py --project <name>     # restrict to one project
-    python static_quality_check.py --spider <name> --rows   # list a spider's bad rows
+    python static_quality_check.py --spider <name> --rows   # list a spider's bad items
     python static_quality_check.py --json report.json   # machine-readable, for CI
     python static_quality_check.py --db postgresql://user:pass@host/dbname
 
-Exit status: 0 if nothing is flagged REVIEW/CRITICAL, 1 otherwise (so CI fails
-when review is needed).
+Exit status: 0 if nothing is flagged REVIEW/CRITICAL, 1 otherwise.
 """
 from __future__ import annotations
 

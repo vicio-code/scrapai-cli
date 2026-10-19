@@ -2,23 +2,15 @@
 """
 Read-only database access that works with both SQLite and PostgreSQL.
 
-The check scripts in this folder need to read a database without caring which
-engine it is: SQLite (a local file) during development, or PostgreSQL in a
-server deployment. This module hides that difference so each check can just
-call `conn.execute(sql, params)`.
-
-Which database to use is resolved in this order:
+The database is resolved in this order:
     1. an explicit value passed in (from the --db command-line option)
     2. the DATABASE_URL environment variable
     3. a local SQLite file named "scrapai.db"
 
-Both engines are opened strictly READ-ONLY, so a check can never modify data:
-    * SQLite   — opened with a "mode=ro" URI (cannot write or create the file)
-    * PostgreSQL — a read-only session
-
-Rows come back as mapping objects, so callers use row["column"] with either
-engine. SQL is written once using SQLite's "?" placeholders; for PostgreSQL the
-"?" markers are translated to "%s" here, so no check has to know the difference.
+Both engines are opened strictly read-only, so a check can never modify data.
+Rows come back as mapping objects, so callers use row["column"] either way. SQL
+is written with SQLite's "?" placeholders; for PostgreSQL the "?" markers are
+translated to "%s" here.
 
 PostgreSQL support needs the psycopg2 package. It is imported only when a
 PostgreSQL URL is actually used, so SQLite-only users never need it installed.
