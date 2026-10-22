@@ -169,38 +169,45 @@ def looks_like_location(v: str) -> bool:
 
 
 # ---- per-row checks: return a list of (severity, code, note) ----------------
-# severity: 'crit' (row is unusable) | 'warn' (suspicious) | 'info'
+# ---- per-row checks: each returns a list of issue dicts --------------------
+# Each issue is {"sev": ..., "code": ..., "note": ...} where sev is:
+#   'crit' (row is unusable) | 'warn' (suspicious) | 'info' (minor)
+
+def issue(sev, code, note):
+    """Build one issue record. Dict (not tuple) so consumers read by name."""
+    return {"sev": sev, "code": code, "note": note}
+
 
 def check_title(title):
     out = []
     if is_empty(title):
-        out.append(("crit", "title_empty", "title is null/empty"))
+        out.append(issue("crit", "title_empty", "title is null/empty"))
         return out
     t = title.strip()
     low = t.lower()
     if low in JUNK_VALUES:
-        out.append(("crit", "title_junk", f"title is a UI label: {t!r}"))
+        out.append(issue("crit", "title_junk", f"title is a UI label: {t!r}"))
     if len(t) < TITLE_MIN_LEN:
-        out.append(("warn", "title_short", f"title too short: {t!r}"))
+        out.append(issue("warn", "title_short", f"title too short: {t!r}"))
     if len(t) > TITLE_MAX_LEN:
-        out.append(("warn", "title_long", f"title {len(t)} chars — likely a sentence"))
+        out.append(issue("warn", "title_long", f"title {len(t)} chars — likely a sentence"))
     if non_ascii_frac(t) > NON_LATIN_MAX_FRAC:
-        out.append(("warn", "title_nonlatin", "title mostly non-Latin — wrong language?"))
+        out.append(issue("warn", "title_nonlatin", "title mostly non-Latin — wrong language?"))
     return out
 
 
 def check_description(desc):
     out = []
     if is_empty(desc):
-        out.append(("crit", "desc_empty", "description is null/empty"))
+        out.append(issue("crit", "desc_empty", "description is null/empty"))
         return out
     d = desc.strip()
     low = d.lower()
     if len(d) < DESC_MIN_LEN:
-        out.append(("crit", "desc_too_short", f"description only {len(d)} chars"))
+        out.append(issue("crit", "desc_too_short", f"description only {len(d)} chars"))
     elif len(d) < DESC_STUB_LEN:
-        out.append(("warn", "desc_stub", f"description short ({len(d)} chars) — maybe a stub"))
-    # Boilerplate only matters when it *dominates* the text. A long, real job
+        out.append(issue("warn", "desc_stub", f"description short ({len(d)} chars) — maybe a stub"))
+    # Boilerplate only matters when it *dominates* the text. A long, real
     # description that merely has 'privacy policy' in a footer is fine; a short
     # value that is mostly a cookie banner is not. Fire only when the text is
     # short OR a boilerplate hint sits in the opening of the value.
@@ -208,54 +215,54 @@ def check_description(desc):
     if hit:
         opening = low[:200]
         if len(d) < DESC_STUB_LEN or hit in opening:
-            out.append(("warn", "desc_boilerplate",
-                        f"description opens with/consists of boilerplate: {hit!r}"))
+            out.append(issue("warn", "desc_boilerplate",
+                             f"description opens with/consists of boilerplate: {hit!r}"))
     if low in JUNK_VALUES:
-        out.append(("crit", "desc_junk", f"description is a UI label: {d[:40]!r}"))
+        out.append(issue("crit", "desc_junk", f"description is a UI label: {d[:40]!r}"))
     return out
 
 
 def check_employer(employer, spider_name, expected_employer=None):
     out = []
     if is_empty(employer):
-        out.append(("crit", "employer_empty", "employer is null/empty"))
+        out.append(issue("crit", "employer_empty", "employer is null/empty"))
         return out
     e = employer.strip()
     low = e.lower()
     if low in JUNK_VALUES:
-        out.append(("crit", "employer_junk", f"employer is a UI label: {e!r}"))
+        out.append(issue("crit", "employer_junk", f"employer is a UI label: {e!r}"))
     if len(e) > EMPLOYER_MAX_LEN or len(e.split()) > EMPLOYER_MAX_WORDS:
-        out.append(("warn", "employer_sentence", f"employer looks like a sentence: {e[:50]!r}"))
+        out.append(issue("warn", "employer_sentence", f"employer looks like a sentence: {e[:50]!r}"))
     # Optional cross-check: if an expected employer name was supplied (see
     # --tracking), warn when the stored employer does not resemble it.
     if expected_employer:
         if not _soft_match(e, expected_employer):
-            out.append(("info", "employer_mismatch",
-                                    f"employer {e!r} != expected {expected_employer!r} (verify)"))
+            out.append(issue("info", "employer_mismatch",
+                             f"employer {e!r} != expected {expected_employer!r} (verify)"))
     return out
 
 
 def check_location(location):
     out = []
     if is_empty(location):
-        out.append(("crit", "location_empty", "location is null/empty"))
+        out.append(issue("crit", "location_empty", "location is null/empty"))
         return out
     loc = location.strip()
     low = loc.lower()
     if low in JUNK_VALUES:
-        out.append(("crit", "location_junk", f"location is a UI label: {loc!r}"))
+        out.append(issue("crit", "location_junk", f"location is a UI label: {loc!r}"))
     if low in WORKPLACE_FLAGS:
-        out.append(("warn", "location_is_flag",
-                    f"location is a workplace-type flag, not a place: {loc!r}"))
+        out.append(issue("warn", "location_is_flag",
+                         f"location is a workplace-type flag, not a place: {loc!r}"))
     if len(loc) > LOCATION_MAX_LEN:
-        out.append(("warn", "location_long", f"location {len(loc)} chars — likely wrong field"))
+        out.append(issue("warn", "location_long", f"location {len(loc)} chars — likely wrong field"))
     # A street address (a number plus a street-type word, e.g. "123 Main St")
     # means the selector grabbed a building address instead of a city/region.
     elif _looks_like_street_address(loc):
-        out.append(("warn", "location_street_address",
-                    f"location looks like a street address, not a city: {loc!r}"))
+        out.append(issue("warn", "location_street_address",
+                         f"location looks like a street address, not a city: {loc!r}"))
     elif not looks_like_location(loc) and low not in WORKPLACE_FLAGS:
-        out.append(("info", "location_shape", f"location has unusual shape: {loc!r}"))
+        out.append(issue("info", "location_shape", f"location has unusual shape: {loc!r}"))
     return out
 
 
@@ -350,7 +357,7 @@ def analyze(db_path, project, tracking_csv, only_spider=None):
         issues += check_employer(meta.get("employer"), sp, expected.get(sp))
         issues += check_location(meta.get("location"))
 
-        sevset = {s for s, _, _ in issues}
+        sevset = {i["sev"] for i in issues}
         if "crit" in sevset:
             bucket["crit_rows"] += 1
         elif "warn" in sevset:
@@ -358,12 +365,12 @@ def analyze(db_path, project, tracking_csv, only_spider=None):
         if not issues:
             bucket["clean_rows"] += 1
 
-        for sev, code, note in issues:
-            bucket["code_counts"][code] += 1
+        for i in issues:
+            bucket["code_counts"][i["code"]] += 1
         if issues:
             bucket["row_issues"].append({
                 "id": r["id"], "url": r["url"],
-                "issues": [{"sev": s, "code": c, "note": n} for s, c, n in issues],
+                "issues": issues,
             })
 
     # statistical pass: per-spider description-length outliers

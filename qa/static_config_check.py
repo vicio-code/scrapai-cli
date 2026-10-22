@@ -72,6 +72,11 @@ def _parse_json(val):
         return None
 
 
+def finding(code, note):
+    """Build one finding record. Dict (not tuple) so consumers read by name."""
+    return {"code": code, "note": note}
+
+
 def analyze_config(name, start_urls, settings, has_follow_rule, extract_fields):
     """Core shape analysis, independent of where the config came from.
 
@@ -82,7 +87,7 @@ def analyze_config(name, start_urls, settings, has_follow_rule, extract_fields):
       has_follow_rule   bool — does any rule/section follow links?
       extract_fields    set[str] — field names the config extracts (for coverage)
 
-    Returns list[(code, note)].
+    Returns a list of finding dicts, each {"code": ..., "note": ...}.
     """
     start_urls = start_urls or []
     settings = settings or {}
@@ -114,19 +119,19 @@ def analyze_config(name, start_urls, settings, has_follow_rule, extract_fields):
             how.append("GENERATED_URLS `list` of hard-coded ids")
         if n_detail_starts and not has_follow_rule:
             how.append(f"{n_detail_starts} hard-coded job URL(s)")
-        issues.append(("FROZEN_ENUMERATION",
-                       f"enumerates specific jobs ({'; '.join(how)}) with no "
-                       "discovery (no follow/range/sitemap) => will decay as "
-                       "those jobs expire; a healthy config discovers ids instead"))
+        issues.append(finding("FROZEN_ENUMERATION",
+                      f"enumerates specific jobs ({'; '.join(how)}) with no "
+                      "discovery (no follow/range/sitemap) => will decay as "
+                      "those jobs expire; a healthy config discovers ids instead"))
     elif not has_discovery and len(start_urls) <= 1 and not gen_list:
-        issues.append(("NO_DISCOVERY",
-                       "no follow rule, no generated/sitemap discovery, "
-                       f"{len(start_urls)} start_url => scrapes a fixed tiny set"))
+        issues.append(finding("NO_DISCOVERY",
+                      "no follow rule, no generated/sitemap discovery, "
+                      f"{len(start_urls)} start_url => scrapes a fixed tiny set"))
 
     for fld in ("description", "employer", "location"):
         if extract_fields and fld not in extract_fields:
-            issues.append(("NO_REQUIRED_SRC",
-                           f"required field {fld!r} has no selector/section source"))
+            issues.append(finding("NO_REQUIRED_SRC",
+                          f"required field {fld!r} has no selector/section source"))
     return issues
 
 
@@ -151,10 +156,10 @@ def lint_db(db_path, project):
         for callback in (cb or {}).values():
             ex = (callback or {}).get("extract", {}) if isinstance(callback, dict) else {}
             extract_fields.update(ex.keys())
-        for code, note in analyze_config(
+        for f in analyze_config(
                 s["name"], start_urls, settings_by.get(s["id"], {}),
                 has_follow, extract_fields):
-            findings.append({"spider": s["name"], "code": code, "note": note})
+            findings.append({"spider": s["name"], **f})
     conn.close()
     return findings
 
@@ -197,9 +202,9 @@ def lint_files(paths):
                 ex = (callback or {}).get("extract", {}) if isinstance(callback, dict) else {}
                 extract_fields.update(ex.keys())
 
-        for code, note in analyze_config(
+        for f in analyze_config(
                 name, start_urls, settings, has_follow, extract_fields):
-            findings.append({"spider": name, "code": code, "note": note})
+            findings.append({"spider": name, **f})
     return findings
 
 
