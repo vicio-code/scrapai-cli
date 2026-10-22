@@ -16,6 +16,57 @@ Field layout: title is a plain column; description, employer and location are
 keys inside a JSON column named metadata_json; published_date is optional and
 ignored here.
 
+Checks (severity in brackets — crit makes a row unusable, warn is suspicious,
+info is a minor note):
+
+  title
+    [crit] title_empty       title is null or blank
+    [crit] title_junk        title is a UI label, not a real title
+                             e.g. "Apply Now", "Save Job"
+    [warn] title_short       title shorter than 3 chars
+    [warn] title_long        title longer than 160 chars — likely a whole
+                             sentence captured instead of a title
+    [warn] title_nonlatin    title is mostly non-Latin script, which usually
+                             means the wrong language/text was captured
+                             e.g. "エンジニア募集" when English was expected
+
+  description
+    [crit] desc_empty        description is null or blank
+    [crit] desc_too_short    shorter than 120 chars — too short to be a real
+                             description, e.g. "Great job!"
+    [warn] desc_stub         120–250 chars — present but suspiciously thin
+    [warn] desc_boilerplate  the text is (or opens with) a cookie/consent or
+                             browser notice rather than the job body
+                             e.g. "We use cookies to improve your experience…"
+    [crit] desc_junk         description is a UI label, e.g. "Read more"
+
+  employer
+    [crit] employer_empty    employer is null or blank
+    [crit] employer_junk     employer is a UI label
+    [warn] employer_sentence looks like a sentence, not a company name (over 80
+                             chars or more than 8 words) — e.g. "We are a
+                             leading global provider of…" captured as employer
+    [info] employer_mismatch stored employer does not resemble the expected one
+                             passed via --tracking (only when that is provided)
+
+  location
+    [crit] location_empty    location is null or blank
+    [crit] location_junk     location is a UI label
+    [warn] location_is_flag  value is a work-style tag, not a place
+                             e.g. "Remote", "Hybrid", "On-site"
+    [warn] location_long     longer than 120 chars — likely the wrong field
+    [warn] location_street_address
+                             looks like a building address, not a city/region
+                             e.g. "123 Main St" instead of "Austin, TX"
+    [info] location_shape    none of the above but an unusual shape for a place
+
+  whole-item / per-spider
+    meta_unparseable         a row's metadata_json could not be read as an object
+    desc_len_outlier         within one spider, a description whose length is a
+                             statistical outlier vs the others — catches one
+                             truncated/overlong row hiding among good ones
+                             (needs at least 5 rows to judge)
+
 Usage:
     python static_quality_check.py                      # table summary, worst first
     python static_quality_check.py --project <name>     # restrict to one project

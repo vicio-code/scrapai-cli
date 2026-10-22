@@ -11,10 +11,25 @@ pages go away:
             dates, OR reads a sitemap — so new items appear on their own.
 
 Findings:
-  FROZEN_ENUMERATION — names specific pages and has no way to discover new ones.
-  NO_DISCOVERY       — no follow rule, generated URLs, or sitemap, and at most
-                       one start URL (often a leftover from testing).
-  NO_REQUIRED_SRC    — a required field has no selector anywhere in the config.
+  FROZEN_ENUMERATION — the config names specific pages and has no way to find
+                       new ones, so it decays as those pages expire. Triggered
+                       by either shape:
+                         * start URLs are item pages with no follow rule
+                           e.g. start_urls = ["/jobs/1001", "/jobs/1002"]
+                         * a GENERATED_URLS "list" variable of fixed ids
+                           e.g. vars: {id: {type: "list", values: ["A","B"]}}
+  NO_DISCOVERY       — no follow rule, no generated URLs, no sitemap, and at
+                       most one start URL: it only ever scrapes a single fixed
+                       page, often a leftover from testing.
+  NO_REQUIRED_SRC    — a required field (description / employer / location) has
+                       no selector anywhere in the config, so the spider can
+                       never populate it.
+  UNREADABLE         — (file mode only) the config file is not valid JSON.
+
+A config is considered HEALTHY (no FROZEN_ENUMERATION) when it can discover new
+pages on its own: a follow rule, a GENERATED_URLS "range"/"date" variable or a
+POST sweep, a sitemap (USE_SITEMAP), or PAGINATED_LISTINGS.
+    e.g. vars: {page: {type: "range", from: 1, to: 500}}  -> healthy
 
 Two ways to run (same checks):
   DATABASE mode — read spider configs from the database:
