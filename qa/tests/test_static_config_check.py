@@ -36,28 +36,24 @@ def test_parse_json_tolerates_string_and_object():
     assert cl._parse_json("not json") is None
 
 
-# ---- frozen-enumeration CLASS decision -------------------------------------
-# Mirror the lint() decision so we can test the generalization without a DB.
+# ---- frozen-enumeration decision, tested through the real analyze_config ----
+# analyze_config takes already-normalized inputs (start_urls, settings,
+# has_follow_rule, extract_fields) and returns finding dicts. We pass a full
+# extract_fields set so these cases isolate the discovery/enumeration logic and
+# do not also trip NO_REQUIRED_SRC.
+_ALL_FIELDS = {"title", "description", "employer", "location"}
 
-def _decide(start_urls, follow, gen=None, sitemap=False, paginated=False):
-    n_detail = sum(1 for u in start_urls if cl._looks_like_detail(u))
-    gen_list = gen_dynamic = False
-    if gen:
-        for entry in (gen if isinstance(gen, list) else [gen]):
-            for v in (entry.get("vars") or {}).values():
-                if v.get("type") == "list":
-                    gen_list = True
-                if v.get("type") in ("range", "date"):
-                    gen_dynamic = True
-    has_discovery = bool(follow) or gen_dynamic or sitemap or paginated
-    enumerates = (n_detail >= 1 and not follow) or gen_list
-    return "FROZEN_ENUMERATION" if (enumerates and not has_discovery) else "OK"
+
+def _codes(issues):
+    return {f["code"] for f in issues}
 
 
 def test_hardcoded_urls_no_follow_is_frozen():
     # A fixed list of item-page URLs with no follow rule: cannot find new items.
-    assert _decide(["https://x.com/job/1", "https://x.com/job/2"], follow=False) \
-        == "FROZEN_ENUMERATION"
+    issues = cl.analyze_config(
+        "x", ["https://x.com/job/1", "https://x.com/job/2"],
+        settings={}, has_follow_rule=False, extract_fields=_ALL_FIELDS)
+    assert "FROZEN_ENUMERATION" in _codes(issues)
 
 
 def test_hardcoded_id_list_is_frozen_even_with_follow_true():
@@ -66,28 +62,37 @@ def test_hardcoded_id_list_is_frozen_even_with_follow_true():
     gen = [{"template": "https://x.com/{id}.md",
             "vars": {"id": {"type": "list", "values": ["A", "B", "C"]}},
             "follow": True}]
-    assert _decide([], follow=False, gen=gen) == "FROZEN_ENUMERATION"
+    issues = cl.analyze_config(
+        "x", [], settings={"GENERATED_URLS": gen},
+        has_follow_rule=False, extract_fields=_ALL_FIELDS)
+    assert "FROZEN_ENUMERATION" in _codes(issues)
 
 
 def test_range_generation_is_healthy():
     # Sweeping a page-number range discovers new items as pages fill up.
     gen = [{"template": "https://x.com/?p={p}",
             "vars": {"p": {"type": "range", "from": 1, "to": 485}}, "follow": True}]
-    assert _decide([], follow=False, gen=gen) == "OK"
+    issues = cl.analyze_config(
+        "x", [], settings={"GENERATED_URLS": gen},
+        has_follow_rule=False, extract_fields=_ALL_FIELDS)
+    assert "FROZEN_ENUMERATION" not in _codes(issues)
 
 
 def test_follow_links_is_healthy():
-    assert _decide(["https://x.com/jobs"], follow=True) == "OK"
+    issues = cl.analyze_config(
+        "x", ["https://x.com/jobs"], settings={},
+        has_follow_rule=True, extract_fields=_ALL_FIELDS)
+    assert "FROZEN_ENUMERATION" not in _codes(issues)
 
 
 def test_sitemap_is_healthy():
-    assert _decide([], follow=False, sitemap=True) == "OK"
+    issues = cl.analyze_config(
+        "x", [], settings={"USE_SITEMAP": "true"},
+        has_follow_rule=False, extract_fields=_ALL_FIELDS)
+    assert "FROZEN_ENUMERATION" not in _codes(issues)
 
 
 # ---- real analyze_config() + lint_files() (the CI entry point) -------------
-
-def _codes(issues):
-    return {c for c, _ in issues}
 
 
 def test_analyze_config_frozen_url_list():
@@ -162,6 +167,9 @@ def _main():
         except AssertionError as e:
             failed += 1
             print(f"FAIL {name}: {e}")
+        except Exception as e:  # noqa: BLE001
+            failed += 1
+            print(f"ERROR {name}: {e!r}")
     print(f"\n{passed} passed, {failed} failed, {len(fns)} total")
     sys.exit(1 if failed else 0)
 

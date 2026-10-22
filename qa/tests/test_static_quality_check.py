@@ -21,7 +21,7 @@ import static_quality_check as dq  # noqa: E402
 
 
 def codes(issues):
-    return {c for _, c, _ in issues}
+    return {i["code"] for i in issues}
 
 
 # ---------------------------------------------------------------------------
@@ -63,7 +63,7 @@ def test_title_good():
 
 def test_title_empty_is_critical():
     issues = dq.check_title("")
-    assert ("crit", "title_empty", issues[0][2]) == issues[0]
+    assert issues[0]["sev"] == "crit" and issues[0]["code"] == "title_empty"
 
 
 def test_title_none_is_critical():
@@ -144,7 +144,7 @@ def test_employer_acronym_vs_expansion_is_info_not_warn():
     # Full name stored, initials expected (same company). A name that does not
     # match the expectation must be reported at most as info, never warn/crit.
     issues = dq.check_employer("Acme Data Systems", "example_spider", "ADS")
-    sev_for_mismatch = [s for s, c, _ in issues if c == "employer_mismatch"]
+    sev_for_mismatch = [i["sev"] for i in issues if i["code"] == "employer_mismatch"]
     # either no mismatch raised, or raised only at info level (never warn/crit)
     assert all(s == "info" for s in sev_for_mismatch)
 
@@ -188,21 +188,34 @@ def test_location_plain_city_not_street():
 # ---------------------------------------------------------------------------
 # SCORING / TRIAGE
 # ---------------------------------------------------------------------------
+def _make_bucket(**overrides):
+    """Build a per-spider bucket with the full shape analyze() produces, so a
+    test stays valid even if score_spider starts reading more keys."""
+    from collections import Counter
+    bucket = {
+        "rows": 0, "row_issues": [], "code_counts": Counter(),
+        "crit_rows": 0, "warn_rows": 0, "desc_lens": [], "clean_rows": 0,
+    }
+    bucket.update(overrides)
+    return bucket
+
+
 def test_scoring_critical_when_many_bad_rows():
     # more than a quarter of rows have a critical problem => CRITICAL
-    bucket = {"rows": 15, "crit_rows": 8, "warn_rows": 0}
+    bucket = _make_bucket(rows=15, crit_rows=8)
     _, verdict = dq.score_spider(bucket)
     assert verdict == "CRITICAL"
 
 
 def test_scoring_review_when_some_warn_rows():
-    bucket = {"rows": 4, "crit_rows": 0, "warn_rows": 2}
+    # 2 of 4 rows warn => weighted density (2*3)/4 = 1.5 => REVIEW exactly.
+    bucket = _make_bucket(rows=4, warn_rows=2)
     _, verdict = dq.score_spider(bucket)
-    assert verdict in ("REVIEW", "WATCH")  # 2/4 warn -> density 1.5 -> REVIEW
+    assert verdict == "REVIEW"
 
 
 def test_scoring_ok_when_clean():
-    bucket = {"rows": 10, "crit_rows": 0, "warn_rows": 0}
+    bucket = _make_bucket(rows=10)
     _, verdict = dq.score_spider(bucket)
     assert verdict == "OK"
 
