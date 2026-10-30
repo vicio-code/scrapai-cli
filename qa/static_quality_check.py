@@ -75,6 +75,10 @@ Usage:
     python static_quality_check.py --db postgresql://user:pass@host/dbname
 
 Exit status: 0 if nothing is flagged REVIEW/CRITICAL, 1 otherwise.
+
+When any spider is flagged, the report is also posted to Slack (see
+qa/slack_notifier.py); this needs SLACK_TOKEN and SLACK_CHANNEL in the
+environment.
 """
 from __future__ import annotations
 
@@ -86,6 +90,7 @@ import statistics
 import sys
 from collections import Counter, defaultdict
 
+import slack_notifier
 from _db import connect_ro
 
 # Tokens that should never *be* a field value (they mean the selector grabbed a
@@ -462,24 +467,28 @@ def main():
                 print(f"  #{ri['id']} {codes}")
                 print(f"      {ri['url']}")
 
+    payload = {
+        "project": args.project,
+        "spiders": [
+            {
+                "spider": sp, "verdict": v, "score": d,
+                "rows": b["rows"], "crit_rows": b["crit_rows"],
+                "warn_rows": b["warn_rows"], "clean_rows": b["clean_rows"],
+                "codes": dict(b["code_counts"]),
+                "desc_len_mean": b.get("desc_len_mean"),
+                "desc_len_stdev": b.get("desc_len_stdev"),
+            }
+            for v, d, sp, b in results
+        ],
+    }
+
     if args.json:
-        payload = {
-            "project": args.project,
-            "spiders": [
-                {
-                    "spider": sp, "verdict": v, "score": d,
-                    "rows": b["rows"], "crit_rows": b["crit_rows"],
-                    "warn_rows": b["warn_rows"], "clean_rows": b["clean_rows"],
-                    "codes": dict(b["code_counts"]),
-                    "desc_len_mean": b.get("desc_len_mean"),
-                    "desc_len_stdev": b.get("desc_len_stdev"),
-                }
-                for v, d, sp, b in results
-            ],
-        }
         with open(args.json, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2)
         print(f"\nWrote {args.json}")
+
+    # Alert on Slack when there is something to review (quiet otherwise).
+    slack_notifier.notify(payload)
 
     sys.exit(1 if flagged else 0)
 
