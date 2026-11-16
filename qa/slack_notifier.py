@@ -2,10 +2,6 @@
 """
 Post a Slack message summarizing a data-quality check run.
 
-Used as a library: a check builds its report in memory and calls notify(report).
-Nothing is sent when the report is clean, so it is quiet by default and speaks
-up only on a problem.
-
 Configuration comes from the environment:
     SLACK_TOKEN     a Slack bot token (xoxb-...), needs chat:write
     SLACK_CHANNEL   id for a channel the bot is in
