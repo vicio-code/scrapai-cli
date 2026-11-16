@@ -3,16 +3,11 @@
   "source_url": "https://careers.hugoboss.com/global/en",
   "allowed_domains": ["careers.hugoboss.com"],
   "start_urls": [
-    "https://careers.hugoboss.com/global/en/job/142749/Part-Time-Sales-Associate-BOSS-Outlet-Charlotte",
-    "https://careers.hugoboss.com/global/en/job/142750/Full-Time-Sales-Associate-Macy-s-Shop-Lenox-Square",
-    "https://careers.hugoboss.com/global/en/job/142751/Part-Time-Sales-Associate-BOSS-Store-Charlotte",
-    "https://careers.hugoboss.com/global/en/job/142752/Part-Time-Sales-Associate-BOSS-Store-Arlington-Pentagon-City",
-    "https://careers.hugoboss.com/global/en/job/142759/Full-Time-Stock-Associate-BOSS-Outlet-Leesburg"
+    "https://careers.hugoboss.com/global/en/search-results"
   ],
   "sections": [
     {
       "match": ["/global/en/job/.*"],
-      "follow": false,
       "extract": {
         "title": {"css": "h1.job-title::text"},
         "description": {
@@ -24,8 +19,11 @@
           ]
         },
         "employer": {
-          "css": "meta[name='x-employer']::attr(content)",
-          "processors": [{"type": "default", "default": "Hugo Boss"}]
+          "css": "address.phw-mt-3 p:first-child::text",
+          "processors": [
+            {"type": "strip"},
+            {"type": "default", "default": "Hugo Boss"}
+          ]
         },
         "location": {
           "css": "[data-ph-at-id='job-info'][data-ph-at-job-title-text]::attr(data-ph-at-job-location-text)"
@@ -37,20 +35,32 @@
           "css": "[data-ph-at-id='job-info'][data-ph-at-job-title-text]::attr(data-ph-at-job-category-text)"
         },
         "hints_position_type": {
-          "css": "span.hiringType::text",
-          "processors": [{"type": "strip"}]
+          "css": "span.hiringType i::attr(class)",
+          "processors": [
+            {"type": "regex", "pattern": "icon-([a-z][a-z-]+)"},
+            {"type": "replace", "old": "-", "new": " "}
+          ]
         }
       }
+    },
+    {
+      "match": ["/global/en/search-results.*"],
+      "follow": true
+    },
+    {
+      "match": [".*"],
+      "follow": true
     }
   ],
   "settings": {
-    "CLOUDFLARE_ENABLED": true,
+    "BROWSER_ENABLED": true,
     "CLOUDFLARE_STRATEGY": "browser_only",
     "CF_WAIT_SELECTOR": "h1.job-title",
-    "CLOUDFLARE_COOKIE_REFRESH_THRESHOLD": 0,
+    "EXTRACTOR_ORDER": ["custom"],
     "DOWNLOAD_DELAY": 1,
     "CONCURRENT_REQUESTS": 1,
     "CONCURRENT_REQUESTS_PER_DOMAIN": 1,
-    "AUTOTHROTTLE_ENABLED": false
+    "AUTOTHROTTLE_ENABLED": false,
+    "DELTAFETCH_ENABLED": false
   }
 }
